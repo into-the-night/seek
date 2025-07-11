@@ -84,15 +84,15 @@ yt-extension/
 
 ## ⚠️ Troubleshooting 
 
-### "Not on a video page" Error
+#### "Not on a video page" Error
 - Make sure you're on a YouTube video page (URL contains `/watch?v=`)
 - Refresh the page and try again
 
-### "No transcript available" Error
+#### "No transcript available" Error
 - Verify the video has closed captions enabled (CC button should be available)
 - Try manually clicking the "Show transcript" button below the video
 
-### Extension not working
+#### Extension not working
 - Reload the extension in `chrome://extensions/`
 - Clear the extension's storage data
 - Check that the extension has the necessary permissions
