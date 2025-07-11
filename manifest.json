@@ -1,0 +1,44 @@
+{
+  "manifest_version": 3,
+  "name": "Seek",
+  "version": "1.0.0",
+  "description": "AI-powered semantic search for YouTube videos. Find any moment using natural language.",
+  
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting"
+  ],
+  
+  "host_permissions": [
+    "https://www.youtube.com/*",
+    "https://api.deepgram.com/*",
+    "https://generativelanguage.googleapis.com/*",
+    "https://api.openai.com/*",
+    "https://api-inference.huggingface.co/*"
+  ],
+  
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Seek - Search within YouTube videos"
+  },
+  
+  "content_scripts": [
+    {
+      "matches": ["https://www.youtube.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_start"
+    }
+  ],
+  
+  "background": {
+    "service_worker": "background.js"
+  },
+  
+  "web_accessible_resources": [
+    {
+      "resources": ["popup.html"],
+      "matches": ["https://www.youtube.com/*"]
+    }
+  ]
+} 
