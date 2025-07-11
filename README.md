@@ -2,7 +2,7 @@
 
 > AI-powered semantic search for YouTube videos. Find any moment using natural language.
 
-[Insert hero image/gif showing the extension in action]
+![Seek search results](assets/results.png)
 
 ## ✨ Features
 
@@ -12,8 +12,6 @@
 - 🧠 **Smart Caching**: Local storage for faster subsequent searches
 - 🎨 **Modern UI**: Clean, minimal dark mode interface with a futuristic design
 - 🔒 **Privacy First**: All processing happens locally - no data sent to servers
-
-[Insert screenshot of search results with timestamps]
 
 ## 🚀 Quick Start
 
