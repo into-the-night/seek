@@ -29,20 +29,6 @@
    - Type your query in natural language
    - Click on any result to jump to that moment
 
-## 🧩 Usage
-
-1. **Navigate to a YouTube video** that has closed captions/subtitles enabled
-2. **Click the extension icon** to open the search popup
-3. **Configure API keys** (first time only):
-   - Click the settings gear (⚙️) in the popup
-   - Enter your Google AI API key (required for semantic search)
-   - Optionally enter Deepgram API key (for future audio transcription)
-4. **Search the video**:
-   - Type your search query in natural language (e.g., "machine learning basics", "how to solve the problem", "what is discussed about AI")
-   - Click Search or press Enter
-5. **View results**: The extension will show up to 5 relevant moments with timestamps
-6. **Click any result** to jump directly to that moment in the video
-
 ## 🤚 Read before you use:
 - The video **must have closed captions** enabled for the extension to work. ( Fix coming soon, star 🌟 the repo for updates!!!! )
 - First search on a video takes longer as it processes the transcript but subsequent searches will be faster due to caching.
@@ -70,13 +56,7 @@
 
 ## 🤝 Contributing
 
-Contributions welcome!
-
-1. Fork the repository
-2. Create a feature branch
-3. Implement your changes
-4. Test thoroughly
-5. Submit a pull request
+Contributions welcome! Fork, work, test, push -> PR!
 
 ## 📜 License
 
