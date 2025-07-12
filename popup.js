@@ -727,7 +727,7 @@ class PopupManager {
                     font-weight: 700;
                     margin-bottom: 24px;
                     text-align: center;
-                    background: linear-gradient(45deg, #667eea 0%, #764ba2 100%);
+                    background: linear-gradient(45deg,rgb(234, 122, 102) 0%,rgb(66, 66, 66) 100%);
                     -webkit-background-clip: text;
                     -webkit-text-fill-color: transparent;
                 }
@@ -754,7 +754,7 @@ class PopupManager {
                     font-family: 'Inter', sans-serif;
                 }
                 .settings-modal .api-input:focus {
-                    border-color: #667eea;
+                    border-color:rgb(234, 102, 102);
                     box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
                     background: rgba(255, 255, 255, 0.12);
                 }
@@ -803,13 +803,13 @@ class PopupManager {
                     font-family: 'Inter', sans-serif;
                 }
                 .settings-modal .btn-primary {
-                    background: linear-gradient(45deg, #667eea 0%, #764ba2 100%);
+                    background: linear-gradient(45deg,rgb(247, 168, 78) 0%,rgb(162, 92, 75) 100%);
                     color: #ffffff;
-                    box-shadow: 0 4px 16px rgba(102, 126, 234, 0.3);
+                    box-shadow: 0 4px 16px rgba(235, 163, 141, 0.3);
                 }
                 .settings-modal .btn-primary:hover {
                     transform: translateY(-2px);
-                    box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+                    box-shadow: 0 6px 20px rgba(235, 163, 141, 0.3);
                 }
                 .settings-modal .btn-secondary {
                     background: rgba(255, 255, 255, 0.1);
@@ -837,12 +837,6 @@ class PopupManager {
                 </div>
                 
                 <div class="api-section">
-                    <label class="api-label">🎤 Deepgram API Key</label>
-                    <input type="password" id="deepgramKey" class="api-input" placeholder="Token ...">
-                    <div class="api-description">Fallback for videos without captions - enables audio transcription</div>
-                </div>
-                
-                <div class="api-section">
                     <label class="api-label">🔍 Google AI API Key (Fallback)</label>
                     <input type="password" id="googleAiKey" class="api-input" placeholder="AIza...">
                     <div class="api-description">Backup option if other embedding services aren't available</div>
@@ -864,7 +858,6 @@ class PopupManager {
         this.getApiKeys().then(keys => {
             document.getElementById('openAiKey').value = keys.openAI || '';
             document.getElementById('huggingFaceKey').value = keys.huggingFace || '';
-            document.getElementById('deepgramKey').value = keys.deepgram || '';
             document.getElementById('googleAiKey').value = keys.googleAI || '';
         });
 
@@ -872,7 +865,6 @@ class PopupManager {
         document.getElementById('saveSettings').addEventListener('click', async () => {
             const openAiKey = document.getElementById('openAiKey').value;
             const huggingFaceKey = document.getElementById('huggingFaceKey').value;
-            const deepgramKey = document.getElementById('deepgramKey').value;
             const googleAiKey = document.getElementById('googleAiKey').value;
             
             await new Promise((resolve) => {
@@ -881,7 +873,6 @@ class PopupManager {
                     apiKeys: { 
                         openAI: openAiKey,
                         huggingFace: huggingFaceKey,
-                        deepgram: deepgramKey, 
                         googleAI: googleAiKey 
                     } 
                 }, (response) => {
