@@ -1,8 +1,8 @@
-# Seek
+![Seek Hero](assets/hero.png)
 
 > AI-powered semantic search for YouTube videos. Find any moment using natural language.
 
-![Seek search results](assets/search.png)
+![Seek search results](assets/results.png)
 
 ## ✨ Features
 
