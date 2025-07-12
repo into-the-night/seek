@@ -43,33 +43,26 @@ class PopupManager {
 
     async checkCurrentVideo() {
         try {
-            console.log('🔍 Checking current video...');
             // Get current tab
             const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-            console.log('📍 Current tab URL:', tab.url);
             
             // Check if we're on YouTube
             if (!tab.url.includes('youtube.com/watch')) {
-                console.log('❌ Not on YouTube video page');
                 this.showNoVideoMessage();
                 return;
             }
 
             // Get video info from content script
-            console.log('📨 Sending message to content script...');
             const response = await chrome.tabs.sendMessage(tab.id, { action: 'getVideoInfo' });
-            console.log('📬 Response from content script:', response);
             
             if (response && response.isVideoPage) {
                 this.currentVideoInfo = response;
-                console.log('✅ Video detected:', response.title);
                 this.showSearchInterface();
             } else {
-                console.log('❌ No video info received');
                 this.showNoVideoMessage();
             }
         } catch (error) {
-            console.error('❌ Error checking video:', error);
+            console.error('Error checking video:', error);
             this.showNoVideoMessage();
         }
     }
@@ -155,11 +148,6 @@ class PopupManager {
     async getTranscript() {
         const videoId = this.currentVideoInfo.videoId;
         
-        // For debugging, let's skip cache and always try fresh extraction
-        // TODO: Re-enable caching after debugging
-        console.log('Generating fresh transcript for debugging...');
-        return await this.generateTranscript(videoId);
-        
         // Check if we have cached transcript
         const cachedTranscript = await new Promise((resolve) => {
             chrome.runtime.sendMessage({ action: 'getTranscript', videoId }, (response) => {
@@ -167,14 +155,12 @@ class PopupManager {
                     console.error('Error getting transcript:', chrome.runtime.lastError);
                     resolve(null);
                 } else {
-                    console.log('Cached transcript response:', response);
                     resolve(response && !response.error ? response : null);
                 }
             });
         });
 
         if (cachedTranscript) {
-            console.log('Using cached transcript:', cachedTranscript.transcript);
             return cachedTranscript.transcript;
         }
 
@@ -206,7 +192,7 @@ class PopupManager {
                 return transcript;
             }
         } catch (error) {
-            console.warn('YouTube transcript not available, trying Deepgram...', error);
+            // YouTube transcript not available, try Deepgram
         }
         
         // Fallback to Deepgram (if available)
@@ -243,18 +229,13 @@ class PopupManager {
             // Get current tab to access YouTube's transcript API
             const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
             
-            console.log('Requesting transcript for video:', videoId);
-            
             // Send message to content script to extract transcript
             const response = await chrome.tabs.sendMessage(tab.id, { 
                 action: 'getYouTubeTranscript',
                 videoId: videoId
             });
             
-            console.log('Content script response:', response);
-            
             if (response && response.transcript) {
-                console.log('Transcript received:', response.transcript);
                 return response.transcript;
             }
             
@@ -269,8 +250,6 @@ class PopupManager {
         try {
             // Get current tab to access the content script
             const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-            
-            console.log('Requesting Deepgram transcription for video:', videoId);
             
             // Send message to content script to extract audio and transcribe with Deepgram
             const response = await chrome.tabs.sendMessage(tab.id, { 
@@ -676,8 +655,6 @@ class PopupManager {
                 chrome.storage.local.clear(() => {
                     if (chrome.runtime.lastError) {
                         console.error('Error clearing cache:', chrome.runtime.lastError);
-                    } else {
-                        console.log('Cache cleared successfully');
                     }
                     resolve();
                 });

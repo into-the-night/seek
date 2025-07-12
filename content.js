@@ -414,18 +414,12 @@ class YouTubeVideoExtractor {
             
             // If we still don't have a time button, let's look at the entire element structure
             if (!timeButton || !timeText.includes(':')) {
-                // Log the HTML structure to help debug
-                if (index < 3) { // Only log first 3 elements to avoid spam
-                    console.log(`Element ${index} HTML:`, element.innerHTML);
-                    console.log(`Element ${index} attributes:`, element.attributes);
-                }
                 
                 // Try to find time in the element's text content
                 const allText = element.textContent;
                 const timeMatch = allText.match(/(\d+):(\d+)/);
                 if (timeMatch) {
                     timeText = timeMatch[0];
-                    console.log(`Found time in text for element ${index}:`, timeText);
                 }
                 
                 // Try to find time in data attributes
@@ -439,18 +433,11 @@ class YouTubeVideoExtractor {
                             const mins = Math.floor(seconds / 60);
                             const secs = seconds % 60;
                             timeText = `${mins}:${secs.toString().padStart(2, '0')}`;
-                            console.log(`Found time in ${attr} for element ${index}:`, timeText);
                             break;
                         }
                     }
                 }
             }
-            
-            console.log(`Element ${index}:`, {
-                timeButton: timeButton ? 'found' : 'null',
-                timeText: timeText || 'no time found',
-                textElement: textElement ? textElement.textContent : 'null'
-            });
             
             if (timeText.includes(':') && textElement) {
                 const text = textElement.textContent.trim();
