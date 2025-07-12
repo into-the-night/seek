@@ -31,7 +31,7 @@
 
 ## 🤚 Read before you use:
 - The video **must have closed captions** enabled for the extension to work. ( Fix coming soon, star 🌟 the repo for updates!!!! )
-- First search on a video takes longer as it processes the transcript but subsequent searches will be faster due to caching.
+- First search on a video takes a little longer as it processes the transcript but subsequent searches will be faster due to caching. ( Looking for a fix!! )
 
 ## ⚠️ Troubleshooting 
 
