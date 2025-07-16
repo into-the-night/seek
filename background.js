@@ -64,6 +64,34 @@ class BackgroundService {
                         sendResponse({ error: error.message });
                     });
                     return true;
+                case 'savePin':
+                    this.savePin(request.pin).then(() => {
+                        sendResponse({ success: true });
+                    }).catch(error => {
+                        sendResponse({ success: false, error: error.message });
+                    });
+                    return true;
+                case 'getPins':
+                    this.getPins(request.videoId).then(pins => {
+                        sendResponse(pins);
+                    }).catch(error => {
+                        sendResponse({ error: error.message });
+                    });
+                    return true;
+                case 'getAllPins':
+                    this.getAllPins().then(pins => {
+                        sendResponse(pins);
+                    }).catch(error => {
+                        sendResponse({ error: error.message });
+                    });
+                    return true;
+                case 'deletePin':
+                    this.deletePin(request.pinId).then(() => {
+                        sendResponse({ success: true });
+                    }).catch(error => {
+                        sendResponse({ success: false, error: error.message });
+                    });
+                    return true;
                 default:
                     break;
             }
@@ -72,7 +100,7 @@ class BackgroundService {
 
     setupStorageKeys() {
         // Initialize storage structure if not exists
-        chrome.storage.local.get(['apiKeys', 'transcripts', 'embeddings'], (result) => {
+        chrome.storage.local.get(['apiKeys', 'transcripts', 'embeddings', 'pins'], (result) => {
             if (!result.apiKeys) {
                 chrome.storage.local.set({ apiKeys: {} });
             }
@@ -81,6 +109,9 @@ class BackgroundService {
             }
             if (!result.embeddings) {
                 chrome.storage.local.set({ embeddings: {} });
+            }
+            if (!result.pins) {
+                chrome.storage.local.set({ pins: [] });
             }
         });
     }
@@ -370,6 +401,93 @@ class BackgroundService {
 
             // Save cleaned data
             chrome.storage.local.set({ transcripts, embeddings });
+        });
+    }
+
+    // Pin management methods
+    async savePin(pin) {
+        return new Promise((resolve, reject) => {
+            chrome.storage.local.get(['pins'], (result) => {
+                if (chrome.runtime.lastError) {
+                    reject(chrome.runtime.lastError);
+                    return;
+                }
+
+                const pins = result.pins || [];
+                
+                // Generate unique ID for the pin
+                const pinId = Date.now().toString() + Math.random().toString(36).substr(2, 9);
+                const newPin = {
+                    id: pinId,
+                    ...pin,
+                    createdAt: Date.now()
+                };
+
+                pins.push(newPin);
+
+                chrome.storage.local.set({ pins: pins }, () => {
+                    if (chrome.runtime.lastError) {
+                        reject(chrome.runtime.lastError);
+                    } else {
+                        console.log('Pin saved:', newPin);
+                        resolve();
+                    }
+                });
+            });
+        });
+    }
+
+    async getPins(videoId) {
+        return new Promise((resolve, reject) => {
+            chrome.storage.local.get(['pins'], (result) => {
+                if (chrome.runtime.lastError) {
+                    reject(chrome.runtime.lastError);
+                    return;
+                }
+
+                const pins = result.pins || [];
+                const videoPins = pins.filter(pin => pin.videoId === videoId);
+                resolve(videoPins);
+            });
+        });
+    }
+
+    async getAllPins() {
+        return new Promise((resolve, reject) => {
+            chrome.storage.local.get(['pins'], (result) => {
+                if (chrome.runtime.lastError) {
+                    reject(chrome.runtime.lastError);
+                    return;
+                }
+
+                const pins = result.pins || [];
+                // Sort by creation date, newest first
+                pins.sort((a, b) => b.createdAt - a.createdAt);
+                resolve(pins);
+            });
+        });
+    }
+
+    async deletePin(pinId) {
+        return new Promise((resolve, reject) => {
+            chrome.storage.local.get(['pins'], (result) => {
+                if (chrome.runtime.lastError) {
+                    reject(chrome.runtime.lastError);
+                    return;
+                }
+
+                const pins = result.pins || [];
+                const updatedPins = pins.filter(pin => pin.id !== pinId);
+
+                chrome.storage.local.set({ pins: updatedPins }, () => {
+                    if (chrome.runtime.lastError) {
+                        reject(chrome.runtime.lastError);
+                    } else {
+                        console.log('Pin deleted:', pinId);
+                        resolve();
+                    }
+                });
+            });
         });
     }
 }

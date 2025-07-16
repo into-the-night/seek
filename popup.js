@@ -17,8 +17,33 @@ class PopupManager {
             status: document.getElementById('status'),
             results: document.getElementById('results'),
             resultsContent: document.getElementById('resultsContent'),
-            settingsBtn: document.getElementById('settingsBtn')
+            settingsBtn: document.getElementById('settingsBtn'),
+            // Tab elements
+            tabBtns: document.querySelectorAll('.tab-btn'),
+            searchTab: document.getElementById('searchTab'),
+            pinsTab: document.getElementById('pinsTab'),
+            // Pin elements
+            createPinBtn: document.getElementById('createPinBtn'),
+            pinsFromVideo: document.getElementById('pinsFromVideo'),
+            pinsFromVideoContent: document.getElementById('pinsFromVideoContent'),
+            allPinsContent: document.getElementById('allPinsContent'),
+            // Modal elements
+            pinModal: document.getElementById('pinModal'),
+            pinTitle: document.getElementById('pinTitle'),
+            pinTimestamp: document.getElementById('pinTimestamp'),
+            pinVideoTitle: document.getElementById('pinVideoTitle'),
+            closePinModal: document.getElementById('closePinModal'),
+            cancelPin: document.getElementById('cancelPin'),
+            savePin: document.getElementById('savePin')
         };
+        
+        this.currentTab = 'search';
+        this.pendingPinData = null;
+
+        // Ensure pin modal is hidden on startup
+        if (this.elements.pinModal) {
+            this.elements.pinModal.classList.add('hidden');
+        }
     }
 
     setupEventListeners() {
@@ -38,6 +63,45 @@ class PopupManager {
         this.elements.settingsBtn.addEventListener('click', (e) => {
             e.preventDefault();
             this.showSettings();
+        });
+
+        // Tab switching
+        this.elements.tabBtns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                this.switchTab(btn.dataset.tab);
+            });
+        });
+
+        // Create pin button (in search popup)
+        this.elements.createPinBtn.addEventListener('click', () => {
+            this.handleCreatePin();
+        });
+
+        // Modal event listeners
+        this.elements.closePinModal.addEventListener('click', () => {
+            this.closePinModal();
+        });
+
+        this.elements.cancelPin.addEventListener('click', () => {
+            this.closePinModal();
+        });
+
+        this.elements.savePin.addEventListener('click', () => {
+            this.savePinFromModal();
+        });
+
+        // Modal backdrop click
+        this.elements.pinModal.addEventListener('click', (e) => {
+            if (e.target === this.elements.pinModal) {
+                this.closePinModal();
+            }
+        });
+
+        // Listen for messages from content script
+        chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+            if (request.action === 'openPinForm') {
+                this.openPinForm(request.pinData);
+            }
         });
     }
 
@@ -70,12 +134,18 @@ class PopupManager {
     showNoVideoMessage() {
         this.elements.noVideoMessage.classList.remove('hidden');
         this.elements.searchInterface.classList.add('hidden');
+        this.elements.createPinBtn.classList.add('hidden');
     }
 
     showSearchInterface() {
         this.elements.noVideoMessage.classList.add('hidden');
         this.elements.searchInterface.classList.remove('hidden');
         this.elements.searchInput.focus();
+        
+        // Show create pin button if on search tab
+        if (this.currentTab === 'search') {
+            this.elements.createPinBtn.classList.remove('hidden');
+        }
     }
 
     async handleSearch() {
@@ -586,6 +656,9 @@ class PopupManager {
                 const resultElement = this.createResultElement(result);
                 this.elements.resultsContent.appendChild(resultElement);
             });
+            
+            // Add pin buttons to results
+            this.addPinButtonsToResults();
         }
         
         this.elements.results.classList.remove('hidden');
@@ -594,6 +667,7 @@ class PopupManager {
     createResultElement(result) {
         const div = document.createElement('div');
         div.className = 'result-item';
+        div.dataset.timestamp = result.startTime; // Add timestamp for pin functionality
         
         // Add similarity score styling
         const similarityClass = result.similarity > 0.8 ? 'high-similarity' : 
@@ -904,6 +978,336 @@ class PopupManager {
                 document.body.removeChild(modal);
             }
         });
+    }
+
+    // Tab switching functionality
+    switchTab(tabName) {
+        this.currentTab = tabName;
+        
+        // Update tab buttons
+        this.elements.tabBtns.forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.tab === tabName);
+        });
+
+        // Update tab content
+        this.elements.searchTab.classList.toggle('active', tabName === 'search');
+        this.elements.pinsTab.classList.toggle('active', tabName === 'pins');
+
+        // Load pins if switching to pins tab
+        if (tabName === 'pins') {
+            this.loadPins();
+        }
+
+        // Show create pin button if on search tab and on video page
+        if (tabName === 'search' && this.currentVideoInfo && this.currentVideoInfo.isVideoPage) {
+            this.elements.createPinBtn.classList.remove('hidden');
+        } else {
+            this.elements.createPinBtn.classList.add('hidden');
+        }
+    }
+
+    // Pin creation functionality
+    async handleCreatePin() {
+        if (!this.currentVideoInfo || !this.currentVideoInfo.isVideoPage) {
+            return;
+        }
+
+        // Get current video timestamp
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        
+        chrome.tabs.sendMessage(tab.id, { action: 'getCurrentTimestamp' }, (response) => {
+            if (response && !response.error) {
+                const timestamp = response.timestamp || 0;
+                
+                this.openPinForm({
+                    videoId: this.currentVideoInfo.videoId,
+                    timestamp: timestamp,
+                    videoTitle: this.currentVideoInfo.title,
+                    channelName: response.channelName || 'Unknown Channel'
+                });
+            }
+        });
+    }
+
+    openPinForm(pinData) {
+        this.pendingPinData = pinData;
+        
+        // Populate modal
+        this.elements.pinTimestamp.textContent = this.formatTime(pinData.timestamp);
+        this.elements.pinVideoTitle.textContent = pinData.videoTitle;
+        this.elements.pinTitle.value = '';
+        
+        // Show modal
+        this.elements.pinModal.classList.remove('hidden');
+        this.elements.pinTitle.focus();
+        
+        // Switch to search tab if not already there
+        if (this.currentTab !== 'search') {
+            this.switchTab('search');
+        }
+    }
+
+    closePinModal() {
+        this.elements.pinModal.classList.add('hidden');
+        this.pendingPinData = null;
+        this.elements.pinTitle.value = '';
+    }
+
+    async savePinFromModal() {
+        const title = this.elements.pinTitle.value.trim();
+        if (!title || !this.pendingPinData) {
+            return;
+        }
+
+        const pin = {
+            videoId: this.pendingPinData.videoId,
+            timestamp: this.pendingPinData.timestamp,
+            title: title,
+            videoTitle: this.pendingPinData.videoTitle,
+            channelName: this.pendingPinData.channelName
+        };
+
+        try {
+            // Save pin via background script
+            await new Promise((resolve, reject) => {
+                chrome.runtime.sendMessage({ action: 'savePin', pin: pin }, (response) => {
+                    if (chrome.runtime.lastError) {
+                        reject(chrome.runtime.lastError);
+                    } else if (response.success) {
+                        resolve();
+                    } else {
+                        reject(new Error(response.error));
+                    }
+                });
+            });
+
+            // Close modal
+            this.closePinModal();
+
+            // Refresh pins if on pins tab
+            if (this.currentTab === 'pins') {
+                this.loadPins();
+            }
+
+            // Show success message
+            this.showStatus('Pin created successfully!', 'success');
+        } catch (error) {
+            console.error('Error saving pin:', error);
+            this.showStatus('Error creating pin', 'error');
+        }
+    }
+
+    // Load and display pins
+    async loadPins() {
+        try {
+            // Get pins for current video
+            const videoPins = this.currentVideoInfo && this.currentVideoInfo.isVideoPage
+                ? await this.getPins(this.currentVideoInfo.videoId)
+                : [];
+
+            // Get all pins
+            const allPins = await this.getAllPins();
+
+            // Update UI
+            this.displayVideoPins(videoPins);
+            this.displayAllPins(allPins);
+        } catch (error) {
+            console.error('Error loading pins:', error);
+        }
+    }
+
+    async getPins(videoId) {
+        return new Promise((resolve, reject) => {
+            chrome.runtime.sendMessage({ action: 'getPins', videoId: videoId }, (response) => {
+                if (chrome.runtime.lastError) {
+                    reject(chrome.runtime.lastError);
+                } else if (response.error) {
+                    reject(new Error(response.error));
+                } else {
+                    resolve(response);
+                }
+            });
+        });
+    }
+
+    async getAllPins() {
+        return new Promise((resolve, reject) => {
+            chrome.runtime.sendMessage({ action: 'getAllPins' }, (response) => {
+                if (chrome.runtime.lastError) {
+                    reject(chrome.runtime.lastError);
+                } else if (response.error) {
+                    reject(new Error(response.error));
+                } else {
+                    resolve(response);
+                }
+            });
+        });
+    }
+
+    displayVideoPins(pins) {
+        if (pins.length > 0) {
+            this.elements.pinsFromVideo.classList.remove('hidden');
+            this.elements.pinsFromVideoContent.innerHTML = pins.map(pin => this.createPinElement(pin)).join('');
+            this.setupPinEventListeners(this.elements.pinsFromVideoContent);
+        } else {
+            this.elements.pinsFromVideo.classList.add('hidden');
+        }
+    }
+
+    displayAllPins(pins) {
+        if (pins.length > 0) {
+            this.elements.allPinsContent.innerHTML = pins.map(pin => this.createPinElement(pin)).join('');
+            this.setupPinEventListeners(this.elements.allPinsContent);
+        } else {
+            this.elements.allPinsContent.innerHTML = `
+                <div class="no-pins">
+                    <div class="icon">📌</div>
+                    <div>No pins created yet</div>
+                </div>
+            `;
+        }
+    }
+
+    createPinElement(pin) {
+        const isCurrentVideo = this.currentVideoInfo && pin.videoId === this.currentVideoInfo.videoId;
+        
+        return `
+            <div class="pin-item" data-pin-id="${pin.id}" data-video-id="${pin.videoId}" data-timestamp="${pin.timestamp}">
+                <div class="pin-title">${this.escapeHtml(pin.title)}</div>
+                <div class="pin-meta">
+                    <span class="pin-timestamp">${this.formatTime(pin.timestamp)}</span>
+                    <span class="pin-video-info">${this.escapeHtml(pin.videoTitle)} • ${this.escapeHtml(pin.channelName || 'Unknown Channel')}</span>
+                </div>
+                <button class="pin-delete-btn" data-pin-id="${pin.id}" title="Delete pin">×</button>
+            </div>
+        `;
+    }
+
+    // Pin navigation and deletion
+    setupPinEventListeners(container) {
+        // Pin click to navigate
+        container.addEventListener('click', async (e) => {
+            const pinItem = e.target.closest('.pin-item');
+            if (pinItem && !e.target.classList.contains('pin-delete-btn')) {
+                const videoId = pinItem.dataset.videoId;
+                const timestamp = parseInt(pinItem.dataset.timestamp);
+                
+                await this.navigateToPin(videoId, timestamp);
+            }
+        });
+
+        // Delete button click
+        container.addEventListener('click', async (e) => {
+            if (e.target.classList.contains('pin-delete-btn')) {
+                e.stopPropagation();
+                const pinId = e.target.dataset.pinId;
+                await this.deletePin(pinId);
+            }
+        });
+    }
+
+    async navigateToPin(videoId, timestamp) {
+        try {
+            // Get current tab
+            const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+            
+            // If we're already on the right video, just navigate to timestamp
+            if (tab.url.includes(`v=${videoId}`)) {
+                chrome.tabs.sendMessage(tab.id, { 
+                    action: 'navigateToTimestamp', 
+                    timestamp: timestamp 
+                });
+            } else {
+                // Navigate to video with timestamp
+                const videoUrl = `https://www.youtube.com/watch?v=${videoId}&t=${timestamp}s`;
+                chrome.tabs.update(tab.id, { url: videoUrl });
+            }
+            
+            // Close popup
+            window.close();
+        } catch (error) {
+            console.error('Error navigating to pin:', error);
+            this.showStatus('Error navigating to pin', 'error');
+        }
+    }
+
+    async deletePin(pinId) {
+        try {
+            await new Promise((resolve, reject) => {
+                chrome.runtime.sendMessage({ action: 'deletePin', pinId: pinId }, (response) => {
+                    if (chrome.runtime.lastError) {
+                        reject(chrome.runtime.lastError);
+                    } else if (response.success) {
+                        resolve();
+                    } else {
+                        reject(new Error(response.error));
+                    }
+                });
+            });
+
+            // Reload pins
+            this.loadPins();
+            this.showStatus('Pin deleted', 'success');
+        } catch (error) {
+            console.error('Error deleting pin:', error);
+            this.showStatus('Error deleting pin', 'error');
+        }
+    }
+
+    // Add pin buttons to search results
+    addPinButtonsToResults() {
+        const resultItems = this.elements.resultsContent.querySelectorAll('.result-item');
+        
+        resultItems.forEach(item => {
+            // Check if pin button already exists
+            if (item.querySelector('.result-pin-btn')) {
+                return;
+            }
+
+            const pinBtn = document.createElement('button');
+            pinBtn.className = 'result-pin-btn';
+            pinBtn.innerHTML = '📌';
+            pinBtn.title = 'Create pin for this moment';
+
+            pinBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const timestamp = parseInt(item.dataset.timestamp);
+                
+                this.openPinForm({
+                    videoId: this.currentVideoInfo.videoId,
+                    timestamp: timestamp,
+                    videoTitle: this.currentVideoInfo.title,
+                    channelName: 'Unknown Channel' // Could get from video info
+                });
+            });
+
+            item.appendChild(pinBtn);
+        });
+    }
+
+    // Utility methods
+    formatTime(seconds) {
+        const minutes = Math.floor(seconds / 60);
+        const remainingSeconds = seconds % 60;
+        return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+    }
+
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    showStatus(message, type = 'info') {
+        if (this.elements.status) {
+            this.elements.status.textContent = message;
+            this.elements.status.className = `status ${type}`;
+            this.elements.status.classList.remove('hidden');
+            
+            setTimeout(() => {
+                this.elements.status.classList.add('hidden');
+            }, 3000);
+        }
     }
 }
 

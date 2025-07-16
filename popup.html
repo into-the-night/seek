@@ -362,6 +362,372 @@
             to { transform: rotate(360deg); }
         }
 
+        /* Tab Navigation */
+        .tab-nav {
+            display: flex;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            background: rgba(18, 18, 18, 0.8);
+            backdrop-filter: blur(10px);
+        }
+
+        .tab-btn {
+            flex: 1;
+            padding: 12px 16px;
+            background: none;
+            border: none;
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+        }
+
+        .tab-btn.active {
+            color: #ffffff;
+        }
+
+        .tab-btn.active::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: linear-gradient(90deg, #ff4444, #cc0000);
+        }
+
+        .tab-btn:hover:not(.active) {
+            color: rgba(255, 255, 255, 0.8);
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        /* Tab Content */
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        /* Create Pin Button */
+        .create-pin-btn:hover {
+            background: rgba(255, 68, 68, 0.2) !important;
+            border-color: rgba(255, 68, 68, 0.5) !important;
+            transform: translateY(-1px) !important;
+        }
+
+        /* Pins Container */
+        .pins-container {
+            padding: 20px 0;
+        }
+
+        .pins-section {
+            margin-bottom: 32px;
+        }
+
+        .pins-section-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #ffffff;
+            margin-bottom: 16px;
+            padding-left: 4px;
+        }
+
+        .pins-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .pin-item {
+            background: rgba(18, 18, 18, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 12px;
+            padding: 16px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+            group: hover;
+        }
+
+        .pin-item:hover {
+            background: rgba(18, 18, 18, 0.8);
+            border-color: rgba(255, 68, 68, 0.3);
+            transform: translateY(-2px);
+        }
+
+        .pin-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: #ffffff;
+            margin-bottom: 8px;
+            line-height: 1.4;
+        }
+
+        .pin-meta {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.6);
+        }
+
+        .pin-timestamp {
+            background: rgba(255, 68, 68, 0.2);
+            color: #ff6666;
+            padding: 4px 8px;
+            border-radius: 6px;
+            font-weight: 500;
+        }
+
+        .pin-video-info {
+            max-width: 200px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .pin-delete-btn {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            background: rgba(255, 0, 0, 0.8);
+            border: none;
+            color: white;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 12px;
+            opacity: 0;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .pin-item:hover .pin-delete-btn {
+            opacity: 1;
+        }
+
+        .pin-delete-btn:hover {
+            background: rgba(255, 0, 0, 1);
+            transform: scale(1.1);
+        }
+
+        .no-pins {
+            text-align: center;
+            padding: 40px 20px;
+            color: rgba(255, 255, 255, 0.5);
+            font-size: 14px;
+        }
+
+        .no-pins .icon {
+            font-size: 32px;
+            margin-bottom: 12px;
+            opacity: 0.6;
+        }
+
+        /* Modal Styles */
+        .modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-backdrop {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(4px);
+        }
+
+        .modal-content {
+            background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            width: 360px;
+            max-width: 90vw;
+            position: relative;
+            z-index: 1;
+            overflow: hidden;
+        }
+
+        .modal-header {
+            padding: 20px 24px 16px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .modal-header h3 {
+            font-size: 18px;
+            font-weight: 600;
+            color: #ffffff;
+            margin: 0;
+        }
+
+        .modal-close {
+            background: none;
+            border: none;
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 24px;
+            cursor: pointer;
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            transition: all 0.3s ease;
+        }
+
+        .modal-close:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: #ffffff;
+        }
+
+        .modal-body {
+            padding: 24px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: 14px;
+            font-weight: 500;
+            color: #ffffff;
+            margin-bottom: 8px;
+        }
+
+        .pin-title-input {
+            width: 100%;
+            padding: 12px 16px;
+            background: rgba(18, 18, 18, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            color: #ffffff;
+            font-size: 14px;
+            transition: all 0.3s ease;
+        }
+
+        .pin-title-input:focus {
+            outline: none;
+            border-color: #ff4444;
+            background: rgba(18, 18, 18, 0.9);
+        }
+
+        .pin-info {
+            background: rgba(255, 68, 68, 0.1);
+            border: 1px solid rgba(255, 68, 68, 0.2);
+            border-radius: 8px;
+            padding: 16px;
+            text-align: center;
+        }
+
+        .pin-timestamp {
+            font-size: 16px;
+            font-weight: 600;
+            color: #ff6666;
+            margin-bottom: 4px;
+        }
+
+        .pin-video-title {
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.7);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .modal-footer {
+            padding: 16px 24px 24px;
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
+        }
+
+        .btn-secondary, .btn-primary {
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            border: none;
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.1);
+            color: rgba(255, 255, 255, 0.8);
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.15);
+            color: #ffffff;
+        }
+
+        .btn-primary {
+            background: linear-gradient(45deg, #ff4444, #cc0000);
+            color: #ffffff;
+        }
+
+        .btn-primary:hover {
+            background: linear-gradient(45deg, #ff6666, #ff4444);
+            transform: translateY(-1px);
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* Result Pin Button */
+        .result-pin-btn {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            background: rgba(255, 68, 68, 0.1);
+            border: 1px solid rgba(255, 68, 68, 0.3);
+            color: #ff4444;
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            opacity: 0;
+        }
+
+        .result-item:hover .result-pin-btn {
+            opacity: 1;
+        }
+
+        .result-pin-btn:hover {
+            background: rgba(255, 68, 68, 0.2);
+            border-color: rgba(255, 68, 68, 0.5);
+            transform: scale(1.1);
+        }
+
         /* Responsive adjustments */
         @media (max-height: 500px) {
             .header {
@@ -385,32 +751,89 @@
             <button class="settings-btn" id="settingsBtn">⚙️</button>
         </div>
 
-        <div class="content">
-            <div id="noVideoMessage" class="no-video">
-                <div class="icon">🎬</div>
-                <div>Navigate to a YouTube video to start searching within it using natural language.</div>
-            </div>
+        <!-- Tab Navigation -->
+        <div class="tab-nav">
+            <button class="tab-btn active" data-tab="search">Search</button>
+            <button class="tab-btn" data-tab="pins">Pins</button>
+        </div>
 
-            <div id="searchInterface" class="hidden">
-                <div class="search-section">
-                    <div class="search-container">
-                        <input 
-                            type="text" 
-                            id="searchInput" 
-                            class="search-input" 
-                            placeholder="Ask anything about this video..."
-                            maxlength="500"
-                        />
-                    </div>
-                    <button id="searchButton" class="search-button">
-                        Search
-                    </button>
-                    <div id="status" class="status hidden"></div>
+        <div class="content">
+            <!-- Search Tab Content -->
+            <div id="searchTab" class="tab-content active">
+                <div id="noVideoMessage" class="no-video">
+                    <div class="icon">🎬</div>
+                    <div>Navigate to a YouTube video to start searching within it using natural language.</div>
                 </div>
 
-                <div id="results" class="results hidden">
-                    <div class="results-title">Results</div>
-                    <div id="resultsContent"></div>
+                <div id="searchInterface" class="hidden">
+                    <div class="search-section">
+                        <div class="search-container">
+                            <input 
+                                type="text" 
+                                id="searchInput" 
+                                class="search-input" 
+                                placeholder="Ask anything about this video..."
+                                maxlength="500"
+                            />
+                        </div>
+                        <button id="createPinBtn" class="create-pin-btn hidden" style="width: 100%; margin-bottom: 12px; padding: 12px; background: rgba(255, 68, 68, 0.1); border: 1px solid rgba(255, 68, 68, 0.3); color: #ff4444; border-radius: 8px; cursor: pointer; transition: all 0.3s ease; font-size: 14px; font-weight: 500;" title="Create pin at current timestamp">
+                            📌 Create Pin at Current Time
+                        </button>
+                        <button id="searchButton" class="search-button">
+                            Search
+                        </button>
+                        <div id="status" class="status hidden"></div>
+                    </div>
+
+                    <div id="results" class="results hidden">
+                        <div class="results-title">Results</div>
+                        <div id="resultsContent"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Pins Tab Content -->
+            <div id="pinsTab" class="tab-content hidden">
+                <div class="pins-container">
+                    <div id="pinsFromVideo" class="pins-section hidden">
+                        <h3 class="pins-section-title">Pins from this video</h3>
+                        <div id="pinsFromVideoContent" class="pins-list"></div>
+                    </div>
+                    
+                    <div id="allPins" class="pins-section">
+                        <h3 class="pins-section-title">All pins</h3>
+                        <div id="allPinsContent" class="pins-list">
+                            <div class="no-pins">
+                                <div class="icon">📌</div>
+                                <div>No pins created yet</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Pin Form Modal -->
+        <div id="pinModal" class="modal hidden">
+            <div class="modal-backdrop"></div>
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>Create Pin</h3>
+                    <button class="modal-close" id="closePinModal">×</button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label for="pinTitle">Pin Title</label>
+                        <input type="text" id="pinTitle" class="pin-title-input" placeholder="Enter pin title..." maxlength="100">
+                    </div>
+                    <div class="pin-info">
+                        <div class="pin-timestamp" id="pinTimestamp">0:00</div>
+                        <div class="pin-video-title" id="pinVideoTitle">Video Title</div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn-secondary" id="cancelPin">Cancel</button>
+                    <button class="btn-primary" id="savePin">Save Pin</button>
                 </div>
             </div>
         </div>

@@ -4,8 +4,10 @@ class YouTubeVideoExtractor {
         this.currentVideoId = null;
         this.currentVideoTitle = null;
         this.currentVideoUrl = null;
+        this.pinButton = null;
         this.setupMessageListener();
         this.observeVideoChanges();
+        this.addPinButtonToPlayer();
     }
 
     setupMessageListener() {
@@ -563,6 +565,158 @@ class YouTubeVideoExtractor {
         // For now, return null to indicate it's not available
         return null;
     }
+
+    // Pin button functionality
+    addPinButtonToPlayer() {
+        // Wait for player controls to load with multiple attempts
+        let attempts = 0;
+        const maxAttempts = 10;
+        
+        const checkForControls = () => {
+            attempts++;
+            
+            // Try multiple selectors for YouTube controls
+            const possibleSelectors = [
+                '.ytp-chrome-controls .ytp-right-controls',
+                '.ytp-right-controls',
+                '.ytp-chrome-bottom .ytp-right-controls',
+                '.html5-video-player .ytp-right-controls'
+            ];
+            
+            let playerControls = null;
+            for (const selector of possibleSelectors) {
+                playerControls = document.querySelector(selector);
+                if (playerControls) {
+                    console.log('Found player controls with selector:', selector);
+                    break;
+                }
+            }
+            
+            if (playerControls && !this.pinButton) {
+                this.createPinButton(playerControls);
+            } else if (!playerControls && attempts < maxAttempts) {
+                // Retry after a short delay
+                setTimeout(checkForControls, 1000);
+            } else if (attempts >= maxAttempts) {
+                console.log('Max attempts reached, pin button not added to player');
+            }
+        };
+
+        // Initial check with a small delay to ensure page has loaded
+        setTimeout(checkForControls, 500);
+
+        // Also observe for navigation changes
+        const observer = new MutationObserver((mutations) => {
+            // Check if the pin button is still in the DOM
+            if (this.pinButton && !document.contains(this.pinButton)) {
+                this.pinButton = null;
+                attempts = 0; // Reset attempts for new page
+                setTimeout(checkForControls, 500);
+            }
+        });
+
+        observer.observe(document.body, { childList: true, subtree: true });
+    }
+
+    createPinButton(playerControls) {
+        try {
+            // Create pin button with simpler approach
+            this.pinButton = document.createElement('button');
+            this.pinButton.className = 'ytp-button';
+            this.pinButton.setAttribute('title', 'Create pin at current time');
+            this.pinButton.setAttribute('aria-label', 'Create pin at current time');
+            
+            // Use a simple star icon instead of complex SVG
+            this.pinButton.innerHTML = `
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="white" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+                </svg>
+            `;
+
+            // Use minimal styling to match YouTube's native buttons
+            this.pinButton.style.cssText = `
+                background: none !important;
+                border: none !important;
+                color: white !important;
+                cursor: pointer !important;
+                padding: 8px !important;
+                margin: 0 !important;
+                border-radius: 0 !important;
+                opacity: 0.8 !important;
+                transition: opacity 0.2s ease !important;
+                display: inline-flex !important;
+                align-items: center !important;
+                justify-content: center !important;
+                width: 48px !important;
+                height: 48px !important;
+                position: relative !important;
+                vertical-align: top !important;
+            `;
+
+            // Add hover effect
+            this.pinButton.addEventListener('mouseenter', () => {
+                this.pinButton.style.opacity = '1';
+            });
+
+            this.pinButton.addEventListener('mouseleave', () => {
+                this.pinButton.style.opacity = '0.8';
+            });
+
+            // Add click handler
+            this.pinButton.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                this.handlePinButtonClick();
+            });
+
+            // Insert the button at the beginning of the right controls to avoid conflicts
+            if (playerControls.firstChild) {
+                playerControls.insertBefore(this.pinButton, playerControls.firstChild);
+            } else {
+                playerControls.appendChild(this.pinButton);
+            }
+
+            console.log('Pin button successfully added to YouTube player');
+        } catch (error) {
+            console.error('Error creating pin button:', error);
+        }
+    }
+
+    handlePinButtonClick() {
+        const video = document.querySelector('video');
+        if (!video) {
+            console.error('No video element found');
+            return;
+        }
+
+        const currentTime = Math.floor(video.currentTime);
+        const videoId = this.getVideoIdFromUrl();
+        const videoTitle = this.currentVideoTitle || 'Unknown Video';
+
+        // Send message to popup to show pin form
+        chrome.runtime.sendMessage({
+            action: 'openPinForm',
+            pinData: {
+                videoId: videoId,
+                timestamp: currentTime,
+                videoTitle: videoTitle,
+                channelName: this.getChannelName()
+            }
+        });
+    }
+
+    getChannelName() {
+        const channelElement = document.querySelector('#owner #channel-name a') || 
+                             document.querySelector('.ytd-channel-name a') ||
+                             document.querySelector('[class*="channel-name"]');
+        return channelElement ? channelElement.textContent.trim() : 'Unknown Channel';
+    }
+
+    formatTime(seconds) {
+        const minutes = Math.floor(seconds / 60);
+        const remainingSeconds = seconds % 60;
+        return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+    }
 }
 
 // Initialize the extractor
@@ -580,6 +734,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             sendResponse({ error: error.message });
         });
         return true; // Indicates we will send a response asynchronously
+    } else if (request.action === 'getCurrentTimestamp') {
+        const video = document.querySelector('video');
+        const timestamp = video ? Math.floor(video.currentTime) : 0;
+        const channelName = videoExtractor.getChannelName();
+        sendResponse({ 
+            timestamp: timestamp,
+            channelName: channelName
+        });
     }
 });
 
