@@ -407,13 +407,17 @@ class BackgroundService {
     // Pin management methods
     async savePin(pin) {
         return new Promise((resolve, reject) => {
+            console.log('Background: Saving pin:', pin);
+            
             chrome.storage.local.get(['pins'], (result) => {
                 if (chrome.runtime.lastError) {
+                    console.error('Background: Error getting pins from storage:', chrome.runtime.lastError);
                     reject(chrome.runtime.lastError);
                     return;
                 }
 
                 const pins = result.pins || [];
+                console.log('Background: Current pins count:', pins.length);
                 
                 // Generate unique ID for the pin
                 const pinId = Date.now().toString() + Math.random().toString(36).substr(2, 9);
@@ -424,12 +428,15 @@ class BackgroundService {
                 };
 
                 pins.push(newPin);
+                console.log('Background: Pin array after adding new pin:', pins.length);
 
                 chrome.storage.local.set({ pins: pins }, () => {
                     if (chrome.runtime.lastError) {
+                        console.error('Background: Error saving pins to storage:', chrome.runtime.lastError);
                         reject(chrome.runtime.lastError);
                     } else {
-                        console.log('Pin saved:', newPin);
+                        console.log('Background: Pin saved successfully:', newPin);
+                        console.log('Background: Total pins now:', pins.length);
                         resolve();
                     }
                 });
@@ -454,15 +461,21 @@ class BackgroundService {
 
     async getAllPins() {
         return new Promise((resolve, reject) => {
+            console.log('Background: Getting all pins...');
+            
             chrome.storage.local.get(['pins'], (result) => {
                 if (chrome.runtime.lastError) {
+                    console.error('Background: Error getting pins from storage:', chrome.runtime.lastError);
                     reject(chrome.runtime.lastError);
                     return;
                 }
 
                 const pins = result.pins || [];
+                console.log('Background: Retrieved pins from storage:', pins.length, pins);
+                
                 // Sort by creation date, newest first
                 pins.sort((a, b) => b.createdAt - a.createdAt);
+                console.log('Background: Sorted pins, returning:', pins.length);
                 resolve(pins);
             });
         });

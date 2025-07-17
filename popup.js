@@ -137,8 +137,9 @@ class PopupManager {
 
         // Listen for messages from content script
         chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-            if (request.action === 'openPinForm' && this.currentVideoInfo) {
-                // Only open pin form if we have valid video info and popup is ready
+            if (request.action === 'openPinForm') {
+                console.log('Received openPinForm message:', request.pinData);
+                // Open pin form with the provided data, even if currentVideoInfo isn't loaded yet
                 this.openPinForm(request.pinData);
             }
         });
@@ -1072,14 +1073,17 @@ class PopupManager {
     }
 
     openPinForm(pinData) {
+        console.log('Opening pin form with data:', pinData);
         this.pendingPinData = pinData;
         
         // Populate modal
         if (this.elements.pinTimestamp) {
             this.elements.pinTimestamp.textContent = this.formatTime(pinData.timestamp);
+            console.log('Set timestamp to:', this.formatTime(pinData.timestamp));
         }
         if (this.elements.pinVideoTitle) {
             this.elements.pinVideoTitle.textContent = pinData.videoTitle;
+            console.log('Set video title to:', pinData.videoTitle);
         }
         if (this.elements.pinTitle) {
             this.elements.pinTitle.value = '';
@@ -1088,6 +1092,9 @@ class PopupManager {
         // Show modal
         if (this.elements.pinModal) {
             this.elements.pinModal.classList.remove('hidden');
+            console.log('Pin modal should now be visible');
+        } else {
+            console.error('Pin modal element not found!');
         }
         
         // Focus on title input
@@ -1100,6 +1107,18 @@ class PopupManager {
         // Switch to search tab if not already there
         if (this.currentTab !== 'search') {
             this.switchTab('search');
+        }
+
+        // Also ensure the popup shows the search interface if it was showing "no video"
+        if (this.elements.noVideoMessage && !this.elements.noVideoMessage.classList.contains('hidden')) {
+            this.showSearchInterface();
+            // Update current video info from the pin data
+            this.currentVideoInfo = {
+                isVideoPage: true,
+                videoId: pinData.videoId,
+                title: pinData.videoTitle,
+                url: `https://www.youtube.com/watch?v=${pinData.videoId}`
+            };
         }
     }
 
@@ -1115,7 +1134,10 @@ class PopupManager {
 
     async savePinFromModal() {
         const title = this.elements.pinTitle.value.trim();
+        console.log('Attempting to save pin with title:', title);
+        
         if (!title || !this.pendingPinData) {
+            console.log('Cannot save pin - missing title or pending data:', { title, pendingPinData: this.pendingPinData });
             return;
         }
 
@@ -1126,27 +1148,39 @@ class PopupManager {
             videoTitle: this.pendingPinData.videoTitle,
             channelName: this.pendingPinData.channelName
         };
+        
+        console.log('Saving pin:', pin);
 
         try {
             // Save pin via background script
             await new Promise((resolve, reject) => {
                 chrome.runtime.sendMessage({ action: 'savePin', pin: pin }, (response) => {
+                    console.log('Save pin response:', response);
                     if (chrome.runtime.lastError) {
                         reject(chrome.runtime.lastError);
-                    } else if (response.success) {
+                    } else if (response && response.success) {
                         resolve();
                     } else {
-                        reject(new Error(response.error));
+                        reject(new Error(response?.error || 'Unknown error saving pin'));
                     }
                 });
             });
 
+            console.log('Pin saved successfully - now testing retrieval');
+            
+            // Test if we can retrieve the pin immediately after saving
+            const testAllPins = await this.getAllPins();
+            console.log('Pins after save:', testAllPins);
+            
             // Close modal
             this.closePinModal();
 
             // Refresh pins if on pins tab
             if (this.currentTab === 'pins') {
+                console.log('Refreshing pins display since we are on pins tab');
                 this.loadPins();
+            } else {
+                console.log('Not on pins tab, current tab:', this.currentTab);
             }
 
             // Show success message
@@ -1160,17 +1194,25 @@ class PopupManager {
     // Load and display pins
     async loadPins() {
         try {
+            console.log('Loading pins...');
+            console.log('Current video info:', this.currentVideoInfo);
+            
             // Get pins for current video
             const videoPins = this.currentVideoInfo && this.currentVideoInfo.isVideoPage
                 ? await this.getPins(this.currentVideoInfo.videoId)
                 : [];
 
+            console.log('Video pins:', videoPins);
+
             // Get all pins
             const allPins = await this.getAllPins();
+            console.log('All pins:', allPins);
 
             // Update UI
             this.displayVideoPins(videoPins);
             this.displayAllPins(allPins);
+            
+            console.log('Pins loaded and displayed');
         } catch (error) {
             console.error('Error loading pins:', error);
         }
@@ -1215,10 +1257,18 @@ class PopupManager {
     }
 
     displayAllPins(pins) {
+        console.log('Displaying all pins:', pins);
+        console.log('All pins container element:', this.elements.allPinsContent);
+        
         if (pins.length > 0) {
-            this.elements.allPinsContent.innerHTML = pins.map(pin => this.createPinElement(pin)).join('');
+            console.log('Creating pin elements for', pins.length, 'pins');
+            const pinElements = pins.map(pin => this.createPinElement(pin));
+            console.log('Generated pin elements:', pinElements);
+            
+            this.elements.allPinsContent.innerHTML = pinElements.join('');
             this.setupPinEventListeners(this.elements.allPinsContent);
         } else {
+            console.log('No pins to display, showing empty state');
             this.elements.allPinsContent.innerHTML = `
                 <div class="no-pins">
                     <div class="icon">📌</div>
@@ -1226,6 +1276,8 @@ class PopupManager {
                 </div>
             `;
         }
+        
+        console.log('All pins display completed');
     }
 
     createPinElement(pin) {
@@ -1369,9 +1421,175 @@ class PopupManager {
             }, 3000);
         }
     }
+
+    // Debug function to test modal functionality
+    debugTestModal() {
+        console.log('Testing modal functionality...');
+        console.log('Modal element:', this.elements.pinModal);
+        console.log('Modal classes before:', this.elements.pinModal?.className);
+        
+        this.openPinForm({
+            videoId: 'test123',
+            timestamp: 60,
+            videoTitle: 'Test Video',
+            channelName: 'Test Channel'
+        });
+        
+        console.log('Modal classes after openPinForm:', this.elements.pinModal?.className);
+    }
+
+    // Debug function to create a test pin immediately
+    async debugCreateTestPin() {
+        console.log('Creating test pin...');
+        
+        const testPin = {
+            videoId: 'debug_test_video_123',
+            timestamp: 42,
+            title: 'Debug Test Pin',
+            videoTitle: 'Debug Test Video Title',
+            channelName: 'Debug Test Channel'
+        };
+
+        try {
+            console.log('Sending test pin to background script...');
+            const response = await new Promise((resolve, reject) => {
+                chrome.runtime.sendMessage({ action: 'savePin', pin: testPin }, (response) => {
+                    if (chrome.runtime.lastError) {
+                        reject(chrome.runtime.lastError);
+                    } else {
+                        resolve(response);
+                    }
+                });
+            });
+            
+            console.log('Test pin save response:', response);
+            
+            if (response && response.success) {
+                console.log('✅ Test pin created successfully');
+                
+                // Switch to pins tab and load pins
+                this.switchTab('pins');
+                
+                // Also test getting all pins directly
+                const allPins = await this.getAllPins();
+                console.log('All pins after test creation:', allPins);
+                
+                return true;
+            } else {
+                console.error('❌ Test pin creation failed:', response);
+                return false;
+            }
+        } catch (error) {
+            console.error('❌ Error creating test pin:', error);
+            return false;
+        }
+    }
+
+    // Debug function to test pin storage functionality
+    async debugTestPinStorage() {
+        console.log('Testing pin storage functionality...');
+        
+        const testPin = {
+            videoId: 'test123',
+            timestamp: 60,
+            title: 'Test Pin Storage',
+            videoTitle: 'Test Video',
+            channelName: 'Test Channel'
+        };
+
+        try {
+            // Test save pin
+            console.log('Testing save pin...');
+            const saveResponse = await new Promise((resolve, reject) => {
+                chrome.runtime.sendMessage({ action: 'savePin', pin: testPin }, (response) => {
+                    if (chrome.runtime.lastError) {
+                        reject(chrome.runtime.lastError);
+                    } else {
+                        resolve(response);
+                    }
+                });
+            });
+            
+            console.log('Save pin response:', saveResponse);
+            
+            if (saveResponse && saveResponse.success) {
+                console.log('✓ Save pin test passed');
+                
+                // Test get all pins
+                console.log('Testing get all pins...');
+                const allPins = await new Promise((resolve, reject) => {
+                    chrome.runtime.sendMessage({ action: 'getAllPins' }, (response) => {
+                        if (chrome.runtime.lastError) {
+                            reject(chrome.runtime.lastError);
+                        } else {
+                            resolve(response);
+                        }
+                    });
+                });
+                
+                console.log('All pins response:', allPins);
+                
+                if (allPins && Array.isArray(allPins)) {
+                    console.log('✓ Get all pins test passed');
+                    console.log('Current pins count:', allPins.length);
+                    
+                    // Find our test pin
+                    const testPinFound = allPins.find(pin => pin.title === 'Test Pin Storage');
+                    if (testPinFound) {
+                        console.log('✓ Test pin found in storage:', testPinFound);
+                        
+                        // Test delete pin
+                        console.log('Testing delete pin...');
+                        const deleteResponse = await new Promise((resolve, reject) => {
+                            chrome.runtime.sendMessage({ action: 'deletePin', pinId: testPinFound.id }, (response) => {
+                                if (chrome.runtime.lastError) {
+                                    reject(chrome.runtime.lastError);
+                                } else {
+                                    resolve(response);
+                                }
+                            });
+                        });
+                        
+                        console.log('Delete pin response:', deleteResponse);
+                        
+                        if (deleteResponse && deleteResponse.success) {
+                            console.log('✓ Delete pin test passed');
+                            console.log('✅ All pin storage tests completed successfully!');
+                        } else {
+                            console.error('✗ Delete pin test failed');
+                        }
+                    } else {
+                        console.error('✗ Test pin not found in storage');
+                    }
+                } else {
+                    console.error('✗ Get all pins test failed');
+                }
+            } else {
+                console.error('✗ Save pin test failed');
+            }
+        } catch (error) {
+            console.error('Pin storage test error:', error);
+        }
+    }
 }
 
 // Initialize popup manager when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
-    new PopupManager();
+    window.popupManager = new PopupManager();
+    console.log('Popup manager initialized:', window.popupManager);
+    console.log('Debug functions available:');
+    console.log('- window.popupManager.debugCreateTestPin() // Creates a test pin');
+    console.log('- window.popupManager.loadPins() // Manually reload pins');
+    console.log('- window.popupManager.debugTestPinStorage() // Run full storage tests');
+    
+    // Run storage tests if in debug mode (check URL parameter or localStorage)
+    const urlParams = new URLSearchParams(window.location.search);
+    const isDebugMode = urlParams.get('debug') === 'true' || localStorage.getItem('debug') === 'true';
+    
+    if (isDebugMode) {
+        console.log('Debug mode enabled - running pin storage tests');
+        setTimeout(() => {
+            window.popupManager.debugTestPinStorage();
+        }, 1000);
+    }
 }); 

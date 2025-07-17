@@ -620,6 +620,7 @@ class YouTubeVideoExtractor {
 
     createPinButton(playerControls) {
         try {
+            console.log('Creating pin button...');
             // Create pin button with simpler approach
             this.pinButton = document.createElement('button');
             this.pinButton.className = 'ytp-button';
@@ -676,13 +677,15 @@ class YouTubeVideoExtractor {
                 playerControls.appendChild(this.pinButton);
             }
 
-            console.log('Pin button successfully added to YouTube player');
+            console.log('Pin button successfully added to YouTube player at:', playerControls);
+            console.log('Pin button element:', this.pinButton);
         } catch (error) {
             console.error('Error creating pin button:', error);
         }
     }
 
     handlePinButtonClick() {
+        console.log('Pin button clicked!');
         const video = document.querySelector('video');
         if (!video) {
             console.error('No video element found');
@@ -692,6 +695,13 @@ class YouTubeVideoExtractor {
         const currentTime = Math.floor(video.currentTime);
         const videoId = this.getVideoIdFromUrl();
         const videoTitle = this.currentVideoTitle || 'Unknown Video';
+        
+        console.log('Creating pin with data:', {
+            videoId,
+            timestamp: currentTime,
+            videoTitle,
+            channelName: this.getChannelName()
+        });
 
         // Send message to popup to show pin form
         chrome.runtime.sendMessage({
@@ -701,6 +711,12 @@ class YouTubeVideoExtractor {
                 timestamp: currentTime,
                 videoTitle: videoTitle,
                 channelName: this.getChannelName()
+            }
+        }, (response) => {
+            if (chrome.runtime.lastError) {
+                console.error('Error sending pin message:', chrome.runtime.lastError);
+            } else {
+                console.log('Pin message sent successfully');
             }
         });
     }
