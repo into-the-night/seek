@@ -343,7 +343,12 @@
 
         /* Utility classes */
         .hidden {
-            display: none;
+            display: none !important;
+        }
+
+        /* Modal hidden state override */
+        .modal.hidden {
+            display: none !important;
         }
 
         /* Loading animation */
@@ -776,7 +781,7 @@
                                 maxlength="500"
                             />
                         </div>
-                        <button id="createPinBtn" class="create-pin-btn hidden" style="width: 100%; margin-bottom: 12px; padding: 12px; background: rgba(255, 68, 68, 0.1); border: 1px solid rgba(255, 68, 68, 0.3); color: #ff4444; border-radius: 8px; cursor: pointer; transition: all 0.3s ease; font-size: 14px; font-weight: 500;" title="Create pin at current timestamp">
+                        <button id="createPinBtn" class="create-pin-btn hidden" style="width: 100%; margin-bottom: 16px; padding: 14px 16px; background: linear-gradient(45deg, rgba(255, 68, 68, 0.15), rgba(255, 68, 68, 0.25)); border: 1px solid rgba(255, 68, 68, 0.4); color: #ff6666; border-radius: 10px; cursor: pointer; transition: all 0.3s ease; font-size: 14px; font-weight: 600; text-align: center; display: flex; align-items: center; justify-content: center; gap: 8px;" title="Create pin at current timestamp">
                             📌 Create Pin at Current Time
                         </button>
                         <button id="searchButton" class="search-button">

@@ -5,7 +5,10 @@ class PopupManager {
         this.isProcessing = false;
         this.initializeUI();
         this.setupEventListeners();
-        this.checkCurrentVideo();
+        // Add a small delay before checking video to ensure proper initialization
+        setTimeout(() => {
+            this.checkCurrentVideo();
+        }, 100);
     }
 
     initializeUI() {
@@ -44,26 +47,45 @@ class PopupManager {
         if (this.elements.pinModal) {
             this.elements.pinModal.classList.add('hidden');
         }
+
+        // Ensure create pin button is hidden initially
+        if (this.elements.createPinBtn) {
+            this.elements.createPinBtn.classList.add('hidden');
+        }
+
+        // Verify all modal elements exist for debugging
+        if (!this.elements.closePinModal) {
+            console.warn('Close pin modal button not found');
+        }
+        if (!this.elements.cancelPin) {
+            console.warn('Cancel pin button not found');
+        }
     }
 
     setupEventListeners() {
         // Search button click
-        this.elements.searchButton.addEventListener('click', () => {
-            this.handleSearch();
-        });
+        if (this.elements.searchButton) {
+            this.elements.searchButton.addEventListener('click', () => {
+                this.handleSearch();
+            });
+        }
 
         // Enter key on search input
-        this.elements.searchInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                this.handleSearch();
-            }
-        });
+        if (this.elements.searchInput) {
+            this.elements.searchInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    this.handleSearch();
+                }
+            });
+        }
 
         // Settings button
-        this.elements.settingsBtn.addEventListener('click', (e) => {
-            e.preventDefault();
-            this.showSettings();
-        });
+        if (this.elements.settingsBtn) {
+            this.elements.settingsBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                this.showSettings();
+            });
+        }
 
         // Tab switching
         this.elements.tabBtns.forEach(btn => {
@@ -73,33 +95,50 @@ class PopupManager {
         });
 
         // Create pin button (in search popup)
-        this.elements.createPinBtn.addEventListener('click', () => {
-            this.handleCreatePin();
-        });
+        if (this.elements.createPinBtn) {
+            this.elements.createPinBtn.addEventListener('click', () => {
+                this.handleCreatePin();
+            });
+        }
 
         // Modal event listeners
-        this.elements.closePinModal.addEventListener('click', () => {
-            this.closePinModal();
-        });
+        if (this.elements.closePinModal) {
+            this.elements.closePinModal.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                this.closePinModal();
+            });
+        }
 
-        this.elements.cancelPin.addEventListener('click', () => {
-            this.closePinModal();
-        });
+        if (this.elements.cancelPin) {
+            this.elements.cancelPin.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                this.closePinModal();
+            });
+        }
 
-        this.elements.savePin.addEventListener('click', () => {
-            this.savePinFromModal();
-        });
+        if (this.elements.savePin) {
+            this.elements.savePin.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                this.savePinFromModal();
+            });
+        }
 
         // Modal backdrop click
-        this.elements.pinModal.addEventListener('click', (e) => {
-            if (e.target === this.elements.pinModal) {
-                this.closePinModal();
-            }
-        });
+        if (this.elements.pinModal) {
+            this.elements.pinModal.addEventListener('click', (e) => {
+                if (e.target === this.elements.pinModal) {
+                    this.closePinModal();
+                }
+            });
+        }
 
         // Listen for messages from content script
         chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-            if (request.action === 'openPinForm') {
+            if (request.action === 'openPinForm' && this.currentVideoInfo) {
+                // Only open pin form if we have valid video info and popup is ready
                 this.openPinForm(request.pinData);
             }
         });
@@ -122,12 +161,22 @@ class PopupManager {
             if (response && response.isVideoPage) {
                 this.currentVideoInfo = response;
                 this.showSearchInterface();
+                // Explicitly show the create pin button after video info is loaded
+                this.updateCreatePinButtonVisibility();
             } else {
                 this.showNoVideoMessage();
             }
         } catch (error) {
             console.error('Error checking video:', error);
             this.showNoVideoMessage();
+        }
+    }
+
+    updateCreatePinButtonVisibility() {
+        if (this.currentTab === 'search' && this.currentVideoInfo && this.currentVideoInfo.isVideoPage) {
+            this.elements.createPinBtn.classList.remove('hidden');
+        } else {
+            this.elements.createPinBtn.classList.add('hidden');
         }
     }
 
@@ -142,10 +191,7 @@ class PopupManager {
         this.elements.searchInterface.classList.remove('hidden');
         this.elements.searchInput.focus();
         
-        // Show create pin button if on search tab
-        if (this.currentTab === 'search') {
-            this.elements.createPinBtn.classList.remove('hidden');
-        }
+        // Create pin button visibility will be handled by updateCreatePinButtonVisibility()
     }
 
     async handleSearch() {
@@ -998,12 +1044,8 @@ class PopupManager {
             this.loadPins();
         }
 
-        // Show create pin button if on search tab and on video page
-        if (tabName === 'search' && this.currentVideoInfo && this.currentVideoInfo.isVideoPage) {
-            this.elements.createPinBtn.classList.remove('hidden');
-        } else {
-            this.elements.createPinBtn.classList.add('hidden');
-        }
+        // Update create pin button visibility
+        this.updateCreatePinButtonVisibility();
     }
 
     // Pin creation functionality
@@ -1033,13 +1075,27 @@ class PopupManager {
         this.pendingPinData = pinData;
         
         // Populate modal
-        this.elements.pinTimestamp.textContent = this.formatTime(pinData.timestamp);
-        this.elements.pinVideoTitle.textContent = pinData.videoTitle;
-        this.elements.pinTitle.value = '';
+        if (this.elements.pinTimestamp) {
+            this.elements.pinTimestamp.textContent = this.formatTime(pinData.timestamp);
+        }
+        if (this.elements.pinVideoTitle) {
+            this.elements.pinVideoTitle.textContent = pinData.videoTitle;
+        }
+        if (this.elements.pinTitle) {
+            this.elements.pinTitle.value = '';
+        }
         
         // Show modal
-        this.elements.pinModal.classList.remove('hidden');
-        this.elements.pinTitle.focus();
+        if (this.elements.pinModal) {
+            this.elements.pinModal.classList.remove('hidden');
+        }
+        
+        // Focus on title input
+        if (this.elements.pinTitle) {
+            setTimeout(() => {
+                this.elements.pinTitle.focus();
+            }, 100);
+        }
         
         // Switch to search tab if not already there
         if (this.currentTab !== 'search') {
@@ -1048,9 +1104,13 @@ class PopupManager {
     }
 
     closePinModal() {
-        this.elements.pinModal.classList.add('hidden');
+        if (this.elements.pinModal) {
+            this.elements.pinModal.classList.add('hidden');
+        }
         this.pendingPinData = null;
-        this.elements.pinTitle.value = '';
+        if (this.elements.pinTitle) {
+            this.elements.pinTitle.value = '';
+        }
     }
 
     async savePinFromModal() {
