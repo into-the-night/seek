@@ -1036,7 +1036,9 @@ class PopupManager {
             btn.classList.toggle('active', btn.dataset.tab === tabName);
         });
 
-        // Update tab content
+        // Update tab content - remove hidden class and toggle active
+        this.elements.searchTab.classList.remove('hidden');
+        this.elements.pinsTab.classList.remove('hidden');
         this.elements.searchTab.classList.toggle('active', tabName === 'search');
         this.elements.pinsTab.classList.toggle('active', tabName === 'pins');
 
@@ -1194,27 +1196,35 @@ class PopupManager {
     // Load and display pins
     async loadPins() {
         try {
-            console.log('Loading pins...');
+            console.log('=== LOADING PINS ===');
             console.log('Current video info:', this.currentVideoInfo);
+            console.log('Current tab:', this.currentTab);
+            console.log('Pins tab element:', this.elements.pinsTab);
+            console.log('All pins content element:', this.elements.allPinsContent);
             
             // Get pins for current video
             const videoPins = this.currentVideoInfo && this.currentVideoInfo.isVideoPage
                 ? await this.getPins(this.currentVideoInfo.videoId)
                 : [];
 
-            console.log('Video pins:', videoPins);
+            console.log('Video pins retrieved:', videoPins);
 
             // Get all pins
+            console.log('Requesting all pins...');
             const allPins = await this.getAllPins();
-            console.log('All pins:', allPins);
+            console.log('All pins retrieved:', allPins);
 
             // Update UI
+            console.log('Updating video pins display...');
             this.displayVideoPins(videoPins);
+            
+            console.log('Updating all pins display...');
             this.displayAllPins(allPins);
             
-            console.log('Pins loaded and displayed');
+            console.log('=== PINS LOADING COMPLETED ===');
         } catch (error) {
             console.error('Error loading pins:', error);
+            console.error('Error stack:', error.stack);
         }
     }
 
@@ -1257,15 +1267,35 @@ class PopupManager {
     }
 
     displayAllPins(pins) {
-        console.log('Displaying all pins:', pins);
+        console.log('=== DISPLAYING ALL PINS ===');
+        console.log('Pins data:', pins);
+        console.log('Pins count:', pins.length);
         console.log('All pins container element:', this.elements.allPinsContent);
+        console.log('Container innerHTML before:', this.elements.allPinsContent?.innerHTML);
         
         if (pins.length > 0) {
             console.log('Creating pin elements for', pins.length, 'pins');
-            const pinElements = pins.map(pin => this.createPinElement(pin));
-            console.log('Generated pin elements:', pinElements);
+            const pinElements = pins.map((pin, index) => {
+                console.log(`Creating element for pin ${index}:`, pin);
+                const element = this.createPinElement(pin);
+                console.log(`Generated HTML for pin ${index}:`, element);
+                return element;
+            });
             
-            this.elements.allPinsContent.innerHTML = pinElements.join('');
+            const joinedHTML = pinElements.join('');
+            console.log('Final joined HTML:', joinedHTML);
+            
+            this.elements.allPinsContent.innerHTML = joinedHTML;
+            console.log('Container innerHTML after:', this.elements.allPinsContent.innerHTML);
+            
+            // Check if elements are actually in the DOM
+            const renderedPins = this.elements.allPinsContent.querySelectorAll('.pin-item');
+            console.log('Rendered pins count in DOM:', renderedPins.length);
+            renderedPins.forEach((pin, index) => {
+                const rect = pin.getBoundingClientRect();
+                console.log(`Pin ${index} dimensions:`, rect.width, 'x', rect.height, 'visible:', rect.width > 0 && rect.height > 0);
+            });
+            
             this.setupPinEventListeners(this.elements.allPinsContent);
         } else {
             console.log('No pins to display, showing empty state');
@@ -1277,7 +1307,7 @@ class PopupManager {
             `;
         }
         
-        console.log('All pins display completed');
+        console.log('=== DISPLAY ALL PINS COMPLETED ===');
     }
 
     createPinElement(pin) {
@@ -1440,18 +1470,18 @@ class PopupManager {
 
     // Debug function to create a test pin immediately
     async debugCreateTestPin() {
-        console.log('Creating test pin...');
+        console.log('=== CREATING TEST PIN ===');
         
         const testPin = {
-            videoId: 'debug_test_video_123',
+            videoId: 'debug_test_video_' + Date.now(),
             timestamp: 42,
-            title: 'Debug Test Pin',
+            title: 'Debug Test Pin ' + Date.now(),
             videoTitle: 'Debug Test Video Title',
             channelName: 'Debug Test Channel'
         };
 
         try {
-            console.log('Sending test pin to background script...');
+            console.log('Sending test pin to background script:', testPin);
             const response = await new Promise((resolve, reject) => {
                 chrome.runtime.sendMessage({ action: 'savePin', pin: testPin }, (response) => {
                     if (chrome.runtime.lastError) {
@@ -1467,12 +1497,21 @@ class PopupManager {
             if (response && response.success) {
                 console.log('✅ Test pin created successfully');
                 
-                // Switch to pins tab and load pins
+                // Switch to pins tab
+                console.log('Switching to pins tab...');
                 this.switchTab('pins');
                 
-                // Also test getting all pins directly
+                // Wait a moment for the tab switch to complete
+                await new Promise(resolve => setTimeout(resolve, 100));
+                
+                // Check all pins directly
+                console.log('Testing getAllPins directly...');
                 const allPins = await this.getAllPins();
                 console.log('All pins after test creation:', allPins);
+                
+                // Force reload pins
+                console.log('Force reloading pins...');
+                await this.loadPins();
                 
                 return true;
             } else {
@@ -1481,8 +1520,35 @@ class PopupManager {
             }
         } catch (error) {
             console.error('❌ Error creating test pin:', error);
+            console.error('Error stack:', error.stack);
             return false;
         }
+    }
+
+    // Quick test function that can be called from console
+    async quickTest() {
+        console.log('=== QUICK PIN TEST ===');
+        
+        // Test 1: Create a test pin
+        console.log('Step 1: Creating test pin...');
+        const created = await this.debugCreateTestPin();
+        
+        if (created) {
+            console.log('✅ Test completed successfully');
+        } else {
+            console.log('❌ Test failed');
+        }
+        
+        // Test 2: Check if container exists and is visible
+        console.log('Step 2: Checking container...');
+        console.log('All pins container:', this.elements.allPinsContent);
+        console.log('Container classes:', this.elements.allPinsContent?.className);
+        console.log('Container style:', this.elements.allPinsContent?.style?.cssText);
+        
+        const rect = this.elements.allPinsContent?.getBoundingClientRect();
+        console.log('Container dimensions:', rect?.width, 'x', rect?.height);
+        
+        return created;
     }
 
     // Debug function to test pin storage functionality
@@ -1576,11 +1642,15 @@ class PopupManager {
 // Initialize popup manager when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
     window.popupManager = new PopupManager();
-    console.log('Popup manager initialized:', window.popupManager);
-    console.log('Debug functions available:');
+    console.log('=== POPUP MANAGER INITIALIZED ===');
+    console.log('Popup manager:', window.popupManager);
+    console.log('\n🔧 Debug functions available:');
+    console.log('- window.popupManager.quickTest() // Quick comprehensive test');
     console.log('- window.popupManager.debugCreateTestPin() // Creates a test pin');
     console.log('- window.popupManager.loadPins() // Manually reload pins');
     console.log('- window.popupManager.debugTestPinStorage() // Run full storage tests');
+    console.log('- window.popupManager.switchTab("pins") // Switch to pins tab');
+    console.log('\n💡 To test pins quickly, run: window.popupManager.quickTest()');
     
     // Run storage tests if in debug mode (check URL parameter or localStorage)
     const urlParams = new URLSearchParams(window.location.search);
