@@ -3,6 +3,7 @@ class PopupManager {
     constructor() {
         this.currentVideoInfo = null;
         this.isProcessing = false;
+        this.statusTimeout = null;
         this.initializeUI();
         this.setupEventListeners();
         // Add a small delay before checking video to ensure proper initialization
@@ -210,6 +211,8 @@ class PopupManager {
         this.isProcessing = true;
         this.elements.searchButton.disabled = true;
         this.elements.results.classList.add('hidden');
+        // Hide create pin button during search
+        this.elements.createPinBtn.classList.add('hidden');
         
         try {
             // Check if we have API keys
@@ -243,6 +246,8 @@ class PopupManager {
         } finally {
             this.isProcessing = false;
             this.elements.searchButton.disabled = false;
+            // Show create pin button again after search
+            this.updateCreatePinButtonVisibility();
         }
     }
 
@@ -752,6 +757,12 @@ class PopupManager {
     }
 
     showStatus(message, type = 'loading') {
+        // Clear any existing timeouts to prevent conflicts
+        if (this.statusTimeout) {
+            clearTimeout(this.statusTimeout);
+            this.statusTimeout = null;
+        }
+        
         let statusHTML = message;
         
         if (type === 'loading') {
@@ -763,8 +774,11 @@ class PopupManager {
         this.elements.status.classList.remove('hidden');
         
         if (type === 'success' || type === 'error') {
-            setTimeout(() => {
-                this.elements.status.classList.add('hidden');
+            this.statusTimeout = setTimeout(() => {
+                if (this.elements.status) {
+                    this.elements.status.classList.add('hidden');
+                }
+                this.statusTimeout = null;
             }, 3000);
         }
     }

@@ -423,6 +423,35 @@
             transform: translateY(-1px) !important;
         }
 
+        /* Circular Create Pin Button */
+        .create-pin-btn-circular {
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            background: linear-gradient(45deg, rgba(255, 68, 68, 0.15), rgba(255, 68, 68, 0.25));
+            border: 1px solid rgba(255, 68, 68, 0.4);
+            color: #ff6666;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 16px auto 0;
+            box-shadow: 0 4px 12px rgba(255, 68, 68, 0.2);
+        }
+
+        .create-pin-btn-circular:hover {
+            background: linear-gradient(45deg, rgba(255, 68, 68, 0.25), rgba(255, 68, 68, 0.35));
+            border-color: rgba(255, 68, 68, 0.6);
+            transform: translateY(-2px) scale(1.05);
+            box-shadow: 0 6px 20px rgba(255, 68, 68, 0.3);
+        }
+
+        .create-pin-btn-circular:active {
+            transform: translateY(0) scale(0.95);
+        }
+
         /* Pins Container */
         .pins-container {
             padding: 20px 0;
@@ -780,11 +809,11 @@
                                 maxlength="500"
                             />
                         </div>
-                        <button id="createPinBtn" class="create-pin-btn hidden" style="width: 100%; margin-bottom: 16px; padding: 14px 16px; background: linear-gradient(45deg, rgba(255, 68, 68, 0.15), rgba(255, 68, 68, 0.25)); border: 1px solid rgba(255, 68, 68, 0.4); color: #ff6666; border-radius: 10px; cursor: pointer; transition: all 0.3s ease; font-size: 14px; font-weight: 600; text-align: center; display: flex; align-items: center; justify-content: center; gap: 8px;" title="Create pin at current timestamp">
-                            📌 Create Pin at Current Time
-                        </button>
                         <button id="searchButton" class="search-button">
                             Search
+                        </button>
+                        <button id="createPinBtn" class="create-pin-btn-circular hidden" title="Create pin at current timestamp">
+                            📌
                         </button>
                         <div id="status" class="status hidden"></div>
                     </div>
