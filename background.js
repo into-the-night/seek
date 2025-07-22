@@ -126,6 +126,14 @@ class BackgroundService {
     updateVideoInfo(videoInfo) {
         this.currentVideoInfo = videoInfo;
         console.log('Updated video info:', videoInfo);
+        
+        // Notify popup if it's open about the video info update
+        chrome.runtime.sendMessage({
+            action: 'videoInfoUpdated',
+            videoInfo: videoInfo
+        }).catch(() => {
+            // Popup might not be open, that's okay
+        });
     }
 
     async saveApiKeys(apiKeys) {

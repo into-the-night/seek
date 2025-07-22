@@ -144,6 +144,10 @@ class PopupManager {
                 console.log('Received openPinForm message:', request.pinData);
                 // Open pin form with the provided data, even if currentVideoInfo isn't loaded yet
                 this.openPinForm(request.pinData);
+            } else if (request.action === 'videoInfoUpdated') {
+                console.log('Received videoInfoUpdated message:', request.videoInfo);
+                // Update current video info when video changes
+                this.handleVideoInfoUpdate(request.videoInfo);
             }
         });
     }
@@ -1709,6 +1713,39 @@ class PopupManager {
             }
         } catch (error) {
             console.error('Pin storage test error:', error);
+        }
+    }
+
+    handleVideoInfoUpdate(videoInfo) {
+        console.log('Updating video info from:', this.currentVideoInfo, 'to:', videoInfo);
+        
+        const wasOnVideoPage = this.currentVideoInfo && this.currentVideoInfo.isVideoPage;
+        const isNowOnVideoPage = videoInfo && videoInfo.isVideoPage;
+        const previousVideoId = this.currentVideoInfo ? this.currentVideoInfo.videoId : null;
+        
+        this.currentVideoInfo = videoInfo;
+        
+        // Update UI based on whether we're on a video page
+        if (isNowOnVideoPage) {
+            this.showSearchInterface();
+        } else {
+            this.showNoVideoMessage();
+        }
+        
+        // Update create pin button visibility
+        this.updateCreatePinButtonVisibility();
+        
+        // If we are on the pins tab, reload pins to show the correct ones for the new video
+        if (this.currentTab === 'pins') {
+            this.loadPins();
+        }
+        
+        // Clear any existing search results if video changed
+        if (wasOnVideoPage && isNowOnVideoPage && 
+            previousVideoId && videoInfo.videoId && 
+            previousVideoId !== videoInfo.videoId) {
+            this.elements.results.classList.add('hidden');
+            this.elements.resultsContent.innerHTML = '';
         }
     }
 }
