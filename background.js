@@ -92,6 +92,13 @@ class BackgroundService {
                         sendResponse({ success: false, error: error.message });
                     });
                     return true;
+                case 'openPinForm':
+                    this.handleOpenPinForm(request.pinData, sender).then((result) => {
+                        sendResponse(result);
+                    }).catch(error => {
+                        sendResponse({ success: false, error: error.message });
+                    });
+                    return true;
                 default:
                     break;
             }
@@ -502,6 +509,77 @@ class BackgroundService {
                 });
             });
         });
+    }
+
+    // Handle opening pin form from content script
+    async handleOpenPinForm(pinData, sender) {
+        try {
+            console.log('Background: Handling openPinForm request with data:', pinData);
+            
+            // Try to send message to popup if it's open
+            // Since we can't directly check if popup is open, we'll use a different approach
+            
+            // Store the pin data temporarily for when popup opens
+            await new Promise((resolve, reject) => {
+                chrome.storage.local.set({ 
+                    pendingPinData: {
+                        ...pinData,
+                        timestamp: Date.now()
+                    }
+                }, () => {
+                    if (chrome.runtime.lastError) {
+                        reject(chrome.runtime.lastError);
+                    } else {
+                        resolve();
+                    }
+                });
+            });
+
+            console.log('Background: Stored pending pin data');
+
+            // Try to open the extension popup programmatically
+            try {
+                await chrome.action.openPopup();
+                console.log('Background: Popup opened successfully');
+            } catch (error) {
+                console.log('Background: Could not open popup programmatically, trying alternative approaches:', error.message);
+                
+                // Alternative 1: Try to open extension in a new tab
+                try {
+                    const extensionUrl = chrome.runtime.getURL('popup.html');
+                    await chrome.tabs.create({
+                        url: extensionUrl,
+                        active: true
+                    });
+                    console.log('Background: Opened extension in new tab');
+                } catch (tabError) {
+                    console.log('Background: Could not open in new tab:', tabError.message);
+                    
+                    // Alternative 2: Show notification to user
+                    try {
+                        await chrome.action.setBadgeText({ text: '!' });
+                        await chrome.action.setBadgeBackgroundColor({ color: '#ff4444' });
+                        console.log('Background: Set badge notification');
+                        
+                        // Clear badge after 5 seconds
+                        setTimeout(() => {
+                            chrome.action.setBadgeText({ text: '' });
+                        }, 5000);
+                    } catch (badgeError) {
+                        console.log('Background: Could not set badge:', badgeError.message);
+                    }
+                }
+            }
+
+            return { 
+                success: true, 
+                message: 'Pin form triggered. If popup didn\'t open automatically, please click the extension icon.' 
+            };
+            
+        } catch (error) {
+            console.error('Background: Error handling openPinForm:', error);
+            throw error;
+        }
     }
 }
 

@@ -126,33 +126,24 @@ class YouTubeVideoExtractor {
     // Get YouTube transcript using built-in captions
     async getYouTubeTranscript(videoId) {
         try {
-            console.log('Starting transcript extraction for video:', videoId);
-            
             // Method 1: Try to get transcript via YouTube's internal API
-            console.log('Trying YouTube internal API...');
             const transcript = await this.extractTranscriptFromYouTubeAPI(videoId);
             if (transcript && transcript.length > 0) {
-                console.log('Successfully extracted transcript via API:', transcript.length, 'segments');
                 return transcript;
             }
             
             // Method 2: Try to extract from DOM if captions are enabled
-            console.log('Trying DOM extraction...');
             const domTranscript = await this.extractTranscriptFromDOM();
             if (domTranscript && domTranscript.length > 0) {
-                console.log('Successfully extracted transcript via DOM:', domTranscript.length, 'segments');
                 return domTranscript;
             }
             
             // Method 3: Fallback to audio extraction and Deepgram transcription
-            console.log('Trying audio extraction and Deepgram transcription...');
             const audioTranscript = await this.transcribeWithDeepgram(videoId);
             if (audioTranscript && audioTranscript.length > 0) {
-                console.log('Successfully extracted transcript via Deepgram:', audioTranscript.length, 'segments');
                 return audioTranscript;
             }
             
-            console.log('No transcript found via any method');
             throw new Error('No transcript available for this video');
         } catch (error) {
             console.error('Error getting YouTube transcript:', error);
@@ -162,16 +153,11 @@ class YouTubeVideoExtractor {
 
     async transcribeWithDeepgram(videoId) {
         try {
-            console.log('Starting Deepgram transcription for video:', videoId);
-            
             // Extract audio stream URL from YouTube
             const audioStreamUrl = await this.extractAudioStreamUrl(videoId);
             if (!audioStreamUrl) {
-                console.log('Could not extract audio stream URL');
                 return null;
             }
-            
-            console.log('Found audio stream URL, sending to background script for transcription');
             
             // Send to background script for Deepgram transcription
             const response = await chrome.runtime.sendMessage({
@@ -228,7 +214,6 @@ class YouTubeVideoExtractor {
                                         return bQuality - aQuality;
                                     })[0];
                                     
-                                    console.log('Found audio stream:', bestAudioStream.mimeType, bestAudioStream.audioQuality);
                                     return bestAudioStream.url;
                                 }
                             }
@@ -242,11 +227,9 @@ class YouTubeVideoExtractor {
             // Alternative approach: Try to access the video element's audio tracks
             const video = document.querySelector('video');
             if (video && video.src) {
-                console.log('Using video element src as fallback');
                 return video.src;
             }
             
-            console.log('Could not find audio stream URL');
             return null;
         } catch (error) {
             console.error('Error extracting audio stream URL:', error);
@@ -292,19 +275,14 @@ class YouTubeVideoExtractor {
 
     async extractTranscriptFromDOM() {
         try {
-            console.log('Extracting transcript from DOM...');
-            
             // Look for transcript in the page (if user has opened transcript panel)
             let transcriptElements = document.querySelectorAll('ytd-transcript-segment-renderer');
-            console.log('Found transcript elements:', transcriptElements.length);
             
             if (transcriptElements.length > 0) {
                 return await this.parseTranscriptElements(transcriptElements);
             }
             
             // Check if transcript button is available but not clicked
-            console.log('Looking for transcript button...');
-            
             // Try multiple selectors for the transcript button
             const transcriptSelectors = [
                 'button[aria-label*="transcript" i]',
@@ -319,16 +297,12 @@ class YouTubeVideoExtractor {
             for (const selector of transcriptSelectors) {
                 showTranscriptButton = document.querySelector(selector);
                 if (showTranscriptButton) {
-                    console.log('Found transcript button with selector:', selector);
                     break;
                 }
             }
             
-            console.log('Transcript button found:', showTranscriptButton);
-            
             if (showTranscriptButton) {
                 // Try to click the transcript button to open it
-                console.log('Found transcript button, attempting to open transcript...');
                 showTranscriptButton.click();
                 
                 // Wait for the transcript to load with retries
@@ -353,13 +327,10 @@ class YouTubeVideoExtractor {
 
     async waitForTranscriptToLoad(maxRetries = 10) {
         for (let i = 0; i < maxRetries; i++) {
-            console.log(`Waiting for transcript to load... attempt ${i + 1}/${maxRetries}`);
-            
             // Wait progressively longer between attempts
             await new Promise(resolve => setTimeout(resolve, 1000 + (i * 500)));
             
             const transcriptElements = document.querySelectorAll('ytd-transcript-segment-renderer');
-            console.log(`Found ${transcriptElements.length} transcript elements on attempt ${i + 1}`);
             
             if (transcriptElements.length > 0) {
                 return await this.parseTranscriptElements(transcriptElements);
@@ -376,13 +347,11 @@ class YouTubeVideoExtractor {
             for (const selector of altSelectors) {
                 const altElements = document.querySelectorAll(selector);
                 if (altElements.length > 0) {
-                    console.log(`Found elements with alternative selector: ${selector}`);
                     return await this.parseTranscriptElements(altElements);
                 }
             }
         }
         
-        console.log('Transcript failed to load after all retries');
         return null;
     }
 
@@ -460,7 +429,6 @@ class YouTubeVideoExtractor {
             }
         });
         
-        console.log('Extracted transcript:', transcript);
         return transcript;
     }
 
@@ -570,24 +538,26 @@ class YouTubeVideoExtractor {
     addPinButtonToPlayer() {
         // Wait for player controls to load with multiple attempts
         let attempts = 0;
-        const maxAttempts = 10;
+        const maxAttempts = 20;
         
         const checkForControls = () => {
             attempts++;
             
-            // Try multiple selectors for YouTube controls
+            // Updated selectors for current YouTube structure
             const possibleSelectors = [
                 '.ytp-chrome-controls .ytp-right-controls',
                 '.ytp-right-controls',
                 '.ytp-chrome-bottom .ytp-right-controls',
-                '.html5-video-player .ytp-right-controls'
+                '.html5-video-player .ytp-right-controls',
+                'div.ytp-right-controls',
+                '.ytp-chrome-bottom div.ytp-right-controls',
+                '.ytd-player .ytp-right-controls'
             ];
             
             let playerControls = null;
             for (const selector of possibleSelectors) {
                 playerControls = document.querySelector(selector);
                 if (playerControls) {
-                    console.log('Found player controls with selector:', selector);
                     break;
                 }
             }
@@ -598,125 +568,567 @@ class YouTubeVideoExtractor {
                 // Retry after a short delay
                 setTimeout(checkForControls, 1000);
             } else if (attempts >= maxAttempts) {
-                console.log('Max attempts reached, pin button not added to player');
+                // Try one more time with a more aggressive approach
+                this.tryAlternativePinButtonPlacement();
             }
         };
 
         // Initial check with a small delay to ensure page has loaded
-        setTimeout(checkForControls, 500);
+        setTimeout(checkForControls, 1000);
 
-        // Also observe for navigation changes
+        // Also observe for navigation changes and DOM updates
         const observer = new MutationObserver((mutations) => {
             // Check if the pin button is still in the DOM
             if (this.pinButton && !document.contains(this.pinButton)) {
                 this.pinButton = null;
                 attempts = 0; // Reset attempts for new page
+                setTimeout(checkForControls, 1000);
+            }
+            
+            // Also check if YouTube player structure changed
+            const hasRightControls = document.querySelector('.ytp-right-controls');
+            if (hasRightControls && !this.pinButton) {
+                attempts = 0;
                 setTimeout(checkForControls, 500);
             }
         });
 
         observer.observe(document.body, { childList: true, subtree: true });
+
+        // Fallback: Add keyboard shortcut for pin creation
+        document.addEventListener('keydown', (e) => {
+            // Ctrl/Cmd + P to create pin
+            if ((e.ctrlKey || e.metaKey) && e.key === 'p' && !e.shiftKey) {
+                // Check if we're on a video page
+                if (this.getVideoIdFromUrl()) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    this.handlePinButtonClick();
+                }
+            }
+        });
+    }
+
+    // Alternative placement method if standard approach fails
+    tryAlternativePinButtonPlacement() {
+        // Look for any YouTube control button as a reference
+        const existingButton = document.querySelector('.ytp-button') || 
+                              document.querySelector('[class*="ytp-"][class*="button"]') ||
+                              document.querySelector('.ytp-fullscreen-button') ||
+                              document.querySelector('.ytp-settings-button');
+        
+        if (existingButton && existingButton.parentElement) {
+            this.createPinButton(existingButton.parentElement);
+        } else {
+            // Last resort: create a floating pin button
+            this.createFloatingPinButton();
+        }
+    }
+
+    // Fallback: Create floating pin button
+    createFloatingPinButton() {
+        const videoPlayer = document.querySelector('#movie_player') || 
+                           document.querySelector('.html5-video-player') ||
+                           document.querySelector('video').closest('.html5-video-player');
+        
+        if (videoPlayer) {
+            this.pinButton = document.createElement('div');
+            this.pinButton.innerHTML = `
+                <button class="floating-pin-btn" title="Create pin at current time">
+                    📌
+                </button>
+            `;
+            
+            this.pinButton.style.cssText = `
+                position: absolute !important;
+                top: 16px !important;
+                right: 16px !important;
+                z-index: 9999 !important;
+                background: rgba(0, 0, 0, 0.8) !important;
+                border: none !important;
+                border-radius: 50% !important;
+                width: 44px !important;
+                height: 44px !important;
+                color: white !important;
+                cursor: pointer !important;
+                font-size: 18px !important;
+                display: flex !important;
+                align-items: center !important;
+                justify-content: center !important;
+                backdrop-filter: blur(8px) !important;
+                transition: all 0.2s ease !important;
+                opacity: 0.9 !important;
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3) !important;
+            `;
+            
+            const button = this.pinButton.querySelector('.floating-pin-btn');
+            button.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                this.handlePinButtonClick();
+            });
+            
+            // Add hover effects to floating button
+            button.addEventListener('mouseenter', () => {
+                this.pinButton.style.opacity = '1';
+                this.pinButton.style.transform = 'scale(1.05)';
+                this.pinButton.style.background = 'rgba(255, 68, 68, 0.9)';
+            });
+            
+            button.addEventListener('mouseleave', () => {
+                this.pinButton.style.opacity = '0.9';
+                this.pinButton.style.transform = 'scale(1)';
+                this.pinButton.style.background = 'rgba(0, 0, 0, 0.8)';
+            });
+            
+            videoPlayer.appendChild(this.pinButton);
+        }
     }
 
     createPinButton(playerControls) {
         try {
-            console.log('Creating pin button...');
-            // Create pin button with simpler approach
+            // Check if button already exists
+            if (this.pinButton && document.contains(this.pinButton)) {
+                return;
+            }
+            
+            // Create pin button with better styling for YouTube integration
             this.pinButton = document.createElement('button');
-            this.pinButton.className = 'ytp-button';
+            this.pinButton.className = 'ytp-button seek-pin-button';
             this.pinButton.setAttribute('title', 'Create pin at current time');
             this.pinButton.setAttribute('aria-label', 'Create pin at current time');
+            this.pinButton.setAttribute('data-tooltip-text', 'Create pin at current time');
             
-            // Use a simple star icon instead of complex SVG
+            // Use simple emoji icon with better styling
             this.pinButton.innerHTML = `
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="white" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
-                </svg>
+                <span style="font-size: 16px; line-height: 1; display: flex; align-items: center; justify-content: center;">📌</span>
             `;
 
-            // Use minimal styling to match YouTube's native buttons
+            // Better styling that matches YouTube's native buttons more closely
             this.pinButton.style.cssText = `
-                background: none !important;
+                background: transparent !important;
                 border: none !important;
-                color: white !important;
+                color: #fff !important;
                 cursor: pointer !important;
-                padding: 8px !important;
+                padding: 0 !important;
                 margin: 0 !important;
-                border-radius: 0 !important;
+                border-radius: 2px !important;
                 opacity: 0.8 !important;
-                transition: opacity 0.2s ease !important;
+                transition: all 0.2s ease !important;
                 display: inline-flex !important;
                 align-items: center !important;
                 justify-content: center !important;
-                width: 48px !important;
-                height: 48px !important;
+                width: 40px !important;
+                height: 40px !important;
                 position: relative !important;
                 vertical-align: top !important;
+                min-width: 40px !important;
+                flex-shrink: 0 !important;
+                outline: none !important;
+                box-sizing: border-box !important;
+                font-family: YouTube Sans, Roboto, Arial, sans-serif !important;
+                top: 0 !important;
             `;
 
-            // Add hover effect
+            // Add hover and focus effects
             this.pinButton.addEventListener('mouseenter', () => {
                 this.pinButton.style.opacity = '1';
+                this.pinButton.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
             });
 
             this.pinButton.addEventListener('mouseleave', () => {
                 this.pinButton.style.opacity = '0.8';
+                this.pinButton.style.backgroundColor = 'transparent';
+            });
+
+            this.pinButton.addEventListener('focus', () => {
+                this.pinButton.style.opacity = '1';
+                this.pinButton.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
+            });
+
+            this.pinButton.addEventListener('blur', () => {
+                this.pinButton.style.opacity = '0.8';
+                this.pinButton.style.backgroundColor = 'transparent';
             });
 
             // Add click handler
             this.pinButton.addEventListener('click', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                this.handlePinButtonClick();
+                try {
+                    this.handlePinButtonClick();
+                } catch (error) {
+                    console.error('Error in pin button click handler:', error);
+                }
             });
 
-            // Insert the button at the beginning of the right controls to avoid conflicts
-            if (playerControls.firstChild) {
-                playerControls.insertBefore(this.pinButton, playerControls.firstChild);
+            // Better insertion strategy - insert at the beginning of right controls
+            // This puts it next to other control buttons in a consistent way
+            const settingsButton = playerControls.querySelector('.ytp-settings-button');
+            const fullscreenButton = playerControls.querySelector('.ytp-fullscreen-button');
+            
+            // Insert before settings button if it exists, otherwise before fullscreen button
+            if (settingsButton) {
+                playerControls.insertBefore(this.pinButton, settingsButton);
+            } else if (fullscreenButton) {
+                playerControls.insertBefore(this.pinButton, fullscreenButton);
             } else {
+                // Fallback: append to the end
                 playerControls.appendChild(this.pinButton);
             }
-
-            console.log('Pin button successfully added to YouTube player at:', playerControls);
-            console.log('Pin button element:', this.pinButton);
+            
         } catch (error) {
             console.error('Error creating pin button:', error);
+            // If standard creation fails, try the floating button approach
+            this.createFloatingPinButton();
         }
     }
 
     handlePinButtonClick() {
-        console.log('Pin button clicked!');
-        const video = document.querySelector('video');
-        if (!video) {
-            console.error('No video element found');
-            return;
-        }
+        try {
+            const video = document.querySelector('video');
+            if (!video) {
+                console.error('No video element found');
+                this.showPinButtonFeedback('❌ No video found', 'error');
+                return;
+            }
 
-        const currentTime = Math.floor(video.currentTime);
-        const videoId = this.getVideoIdFromUrl();
-        const videoTitle = this.currentVideoTitle || 'Unknown Video';
-        
-        console.log('Creating pin with data:', {
-            videoId,
-            timestamp: currentTime,
-            videoTitle,
-            channelName: this.getChannelName()
-        });
+            const currentTime = Math.floor(video.currentTime);
+            const videoId = this.getVideoIdFromUrl();
+            const videoTitle = this.currentVideoTitle || document.querySelector('h1.ytd-watch-metadata')?.textContent?.trim() || 'Unknown Video';
+            const channelName = this.getChannelName();
 
-        // Send message to popup to show pin form
-        chrome.runtime.sendMessage({
-            action: 'openPinForm',
-            pinData: {
+            if (!videoId) {
+                console.error('Could not get video ID');
+                this.showPinButtonFeedback('❌ Could not get video ID', 'error');
+                return;
+            }
+
+            // Show immediate feedback
+            this.showPinButtonFeedback('📌 Creating pin...', 'loading');
+
+            // Create in-page pin form overlay (more reliable than popup)
+            this.showInPagePinForm({
                 videoId: videoId,
                 timestamp: currentTime,
                 videoTitle: videoTitle,
-                channelName: this.getChannelName()
+                channelName: channelName
+            });
+            
+        } catch (error) {
+            console.error('Error in handlePinButtonClick:', error);
+            this.showPinButtonFeedback('❌ Error creating pin', 'error');
+        }
+    }
+
+    // Show visual feedback on the pin button
+    showPinButtonFeedback(message, type) {
+        if (!this.pinButton) return;
+        
+        // Store original content
+        const originalContent = this.pinButton.innerHTML;
+        const originalStyle = this.pinButton.style.cssText;
+        
+        // Show feedback
+        let feedbackEmoji = '';
+        let bgColor = '';
+        
+        switch (type) {
+            case 'loading':
+                feedbackEmoji = '⏳';
+                bgColor = 'rgba(255, 193, 7, 0.3)';
+                break;
+            case 'success':
+                feedbackEmoji = '✅';
+                bgColor = 'rgba(40, 167, 69, 0.3)';
+                break;
+            case 'error':
+                feedbackEmoji = '❌';
+                bgColor = 'rgba(220, 53, 69, 0.3)';
+                break;
+            case 'normal':
+                // Reset to original state immediately
+                this.pinButton.innerHTML = originalContent;
+                this.pinButton.style.cssText = originalStyle;
+                return;
+        }
+        
+        this.pinButton.innerHTML = `<span style="font-size: 18px; line-height: 1;">${feedbackEmoji}</span>`;
+        this.pinButton.style.backgroundColor = bgColor;
+        this.pinButton.style.transform = 'scale(1.1)';
+        
+        // Reset after delay
+        setTimeout(() => {
+            if (this.pinButton && document.contains(this.pinButton)) {
+                this.pinButton.innerHTML = originalContent;
+                this.pinButton.style.cssText = originalStyle;
             }
-        }, (response) => {
-            if (chrome.runtime.lastError) {
-                console.error('Error sending pin message:', chrome.runtime.lastError);
-            } else {
-                console.log('Pin message sent successfully');
+        }, type === 'loading' ? 3000 : 2000);
+    }
+
+    // Show in-page pin form overlay
+    showInPagePinForm(pinData) {
+        // Remove existing overlay if present
+        const existingOverlay = document.getElementById('seek-pin-overlay');
+        if (existingOverlay) {
+            existingOverlay.remove();
+        }
+        
+        // Create overlay container
+        const overlay = document.createElement('div');
+        overlay.id = 'seek-pin-overlay';
+        overlay.style.cssText = `
+            position: fixed !important;
+            top: 0 !important;
+            left: 0 !important;
+            width: 100vw !important;
+            height: 100vh !important;
+            background: rgba(0, 0, 0, 0.8) !important;
+            backdrop-filter: blur(8px) !important;
+            z-index: 99999 !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+        `;
+        
+        // Create form container
+        const formContainer = document.createElement('div');
+        formContainer.style.cssText = `
+            background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%) !important;
+            border: 1px solid rgba(255, 255, 255, 0.15) !important;
+            border-radius: 20px !important;
+            padding: 28px !important;
+            width: 420px !important;
+            max-width: 95vw !important;
+            max-height: 90vh !important;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.05) !important;
+            position: relative !important;
+            color: white !important;
+            overflow: hidden !important;
+            box-sizing: border-box !important;
+        `;
+        
+        // Create form HTML
+        formContainer.innerHTML = `
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 28px; padding-bottom: 16px; border-bottom: 1px solid rgba(255, 255, 255, 0.1);">
+                <h2 style="margin: 0; font-size: 22px; font-weight: 700; color: #ffffff; display: flex; align-items: center; gap: 8px;">
+                    <span style="font-size: 20px;">📌</span> Create Pin
+                </h2>
+                <button id="seek-close-pin-form" style="
+                    background: rgba(255, 255, 255, 0.1); 
+                    border: none; 
+                    color: rgba(255,255,255,0.8); 
+                    font-size: 20px; 
+                    cursor: pointer; 
+                    width: 36px; 
+                    height: 36px; 
+                    border-radius: 50%; 
+                    display: flex; 
+                    align-items: center; 
+                    justify-content: center;
+                    transition: all 0.2s ease;
+                    font-weight: 300;
+                ">×</button>
+            </div>
+            
+            <div style="margin-bottom: 24px;">
+                <label style="display: block; font-size: 14px; font-weight: 600; color: #ffffff; margin-bottom: 10px; letter-spacing: 0.3px;">Pin Title</label>
+                <input type="text" id="seek-pin-title" placeholder="Enter a descriptive title..." maxlength="100" style="
+                    width: 100%; 
+                    padding: 14px 16px; 
+                    background: rgba(255, 255, 255, 0.08); 
+                    border: 1px solid rgba(255, 255, 255, 0.15); 
+                    border-radius: 10px; 
+                    color: #ffffff; 
+                    font-size: 15px; 
+                    outline: none;
+                    font-family: inherit;
+                    transition: all 0.2s ease;
+                    box-sizing: border-box;
+                " />
+            </div>
+            
+            <div style="
+                background: rgba(255, 68, 68, 0.08); 
+                border: 1px solid rgba(255, 68, 68, 0.25); 
+                border-radius: 12px; 
+                padding: 20px; 
+                text-align: center; 
+                margin-bottom: 28px;
+                position: relative;
+                overflow: hidden;
+            ">
+                <div style="position: absolute; top: 0; left: 0; right: 0; height: 2px; background: linear-gradient(90deg, #ff4444, #ff6b6b);"></div>
+                <div style="font-size: 24px; font-weight: 700; color: #ff5555; margin-bottom: 8px; font-family: 'SF Mono', monospace;">${this.formatTime(pinData.timestamp)}</div>
+                <div style="
+                    font-size: 14px; 
+                    color: rgba(255, 255, 255, 0.9); 
+                    margin-bottom: 6px; 
+                    overflow: hidden; 
+                    text-overflow: ellipsis; 
+                    white-space: nowrap;
+                    font-weight: 500;
+                    max-width: 100%;
+                ">${pinData.videoTitle}</div>
+                <div style="font-size: 12px; color: rgba(255, 255, 255, 0.6); font-weight: 400;">${pinData.channelName}</div>
+            </div>
+            
+            <div style="display: flex; gap: 14px; justify-content: flex-end; align-items: center;">
+                <button id="seek-cancel-pin" style="
+                    padding: 12px 24px; 
+                    background: rgba(255, 255, 255, 0.08); 
+                    border: 1px solid rgba(255, 255, 255, 0.2); 
+                    border-radius: 10px; 
+                    color: rgba(255, 255, 255, 0.9); 
+                    cursor: pointer; 
+                    font-size: 14px; 
+                    font-weight: 600;
+                    font-family: inherit;
+                    transition: all 0.2s ease;
+                    min-width: 80px;
+                ">Cancel</button>
+                <button id="seek-save-pin" style="
+                    padding: 12px 24px; 
+                    background: linear-gradient(135deg, #ff4444, #e73c3c); 
+                    border: none; 
+                    border-radius: 10px; 
+                    color: #ffffff; 
+                    cursor: pointer; 
+                    font-size: 14px; 
+                    font-weight: 600;
+                    font-family: inherit;
+                    transition: all 0.2s ease;
+                    box-shadow: 0 4px 15px rgba(255, 68, 68, 0.3);
+                    min-width: 100px;
+                ">Save Pin</button>
+            </div>
+        `;
+        
+        overlay.appendChild(formContainer);
+        document.body.appendChild(overlay);
+        
+        // Focus the title input
+        const titleInput = document.getElementById('seek-pin-title');
+        setTimeout(() => {
+            titleInput.focus();
+        }, 100);
+        
+        // Add enhanced input interactions
+        titleInput.addEventListener('focus', () => {
+            titleInput.style.borderColor = 'rgba(255, 68, 68, 0.6)';
+            titleInput.style.backgroundColor = 'rgba(255, 255, 255, 0.12)';
+            titleInput.style.boxShadow = '0 0 0 3px rgba(255, 68, 68, 0.1)';
+        });
+        
+        titleInput.addEventListener('blur', () => {
+            titleInput.style.borderColor = 'rgba(255, 255, 255, 0.15)';
+            titleInput.style.backgroundColor = 'rgba(255, 255, 255, 0.08)';
+            titleInput.style.boxShadow = 'none';
+        });
+        
+        // Add event listeners
+        const closeBtn = document.getElementById('seek-close-pin-form');
+        const cancelBtn = document.getElementById('seek-cancel-pin');
+        const saveBtn = document.getElementById('seek-save-pin');
+        
+        // Enhanced button interactions
+        closeBtn.addEventListener('mouseenter', () => {
+            closeBtn.style.backgroundColor = 'rgba(255, 255, 255, 0.2)';
+            closeBtn.style.color = '#ffffff';
+        });
+        
+        closeBtn.addEventListener('mouseleave', () => {
+            closeBtn.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
+            closeBtn.style.color = 'rgba(255,255,255,0.8)';
+        });
+        
+        cancelBtn.addEventListener('mouseenter', () => {
+            cancelBtn.style.backgroundColor = 'rgba(255, 255, 255, 0.15)';
+            cancelBtn.style.borderColor = 'rgba(255, 255, 255, 0.3)';
+            cancelBtn.style.transform = 'translateY(-1px)';
+        });
+        
+        cancelBtn.addEventListener('mouseleave', () => {
+            cancelBtn.style.backgroundColor = 'rgba(255, 255, 255, 0.08)';
+            cancelBtn.style.borderColor = 'rgba(255, 255, 255, 0.2)';
+            cancelBtn.style.transform = 'translateY(0)';
+        });
+        
+        saveBtn.addEventListener('mouseenter', () => {
+            saveBtn.style.background = 'linear-gradient(135deg, #ff5555, #ee4444)';
+            saveBtn.style.boxShadow = '0 6px 20px rgba(255, 68, 68, 0.4)';
+            saveBtn.style.transform = 'translateY(-1px)';
+        });
+        
+        saveBtn.addEventListener('mouseleave', () => {
+            saveBtn.style.background = 'linear-gradient(135deg, #ff4444, #e73c3c)';
+            saveBtn.style.boxShadow = '0 4px 15px rgba(255, 68, 68, 0.3)';
+            saveBtn.style.transform = 'translateY(0)';
+        });
+        
+        const closeOverlay = () => {
+            overlay.remove();
+            this.showPinButtonFeedback('📌', 'normal');
+        };
+        
+        const savePin = async () => {
+            const title = titleInput.value.trim();
+            if (!title) {
+                titleInput.style.borderColor = '#ff4444';
+                titleInput.focus();
+                return;
+            }
+            
+            const pin = {
+                videoId: pinData.videoId,
+                timestamp: pinData.timestamp,
+                title: title,
+                videoTitle: pinData.videoTitle,
+                channelName: pinData.channelName
+            };
+            
+            try {
+                // Save pin via background script
+                await new Promise((resolve, reject) => {
+                    chrome.runtime.sendMessage({ action: 'savePin', pin: pin }, (response) => {
+                        if (chrome.runtime.lastError) {
+                            reject(chrome.runtime.lastError);
+                        } else if (response && response.success) {
+                            resolve();
+                        } else {
+                            reject(new Error(response?.error || 'Unknown error saving pin'));
+                        }
+                    });
+                });
+                
+                this.showPinButtonFeedback('✅ Pin saved!', 'success');
+                closeOverlay();
+            } catch (error) {
+                console.error('Error saving pin:', error);
+                this.showPinButtonFeedback('❌ Error saving pin', 'error');
+            }
+        };
+        
+        closeBtn.addEventListener('click', closeOverlay);
+        cancelBtn.addEventListener('click', closeOverlay);
+        saveBtn.addEventListener('click', savePin);
+        
+        // Close on Escape key
+        const handleKeyPress = (e) => {
+            if (e.key === 'Escape') {
+                closeOverlay();
+                document.removeEventListener('keydown', handleKeyPress);
+            } else if (e.key === 'Enter' && e.target === titleInput) {
+                savePin();
+            }
+        };
+        document.addEventListener('keydown', handleKeyPress);
+        
+        // Close on backdrop click
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) {
+                closeOverlay();
             }
         });
     }

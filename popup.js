@@ -9,6 +9,8 @@ class PopupManager {
         // Add a small delay before checking video to ensure proper initialization
         setTimeout(() => {
             this.checkCurrentVideo();
+            // Also check for pending pin data from content script
+            this.checkPendingPinData();
         }, 100);
     }
 
@@ -144,6 +146,43 @@ class PopupManager {
                 this.openPinForm(request.pinData);
             }
         });
+    }
+
+    async checkPendingPinData() {
+        try {
+            // Check if there's pending pin data from content script button click
+            const result = await new Promise((resolve) => {
+                chrome.storage.local.get(['pendingPinData'], (result) => {
+                    if (chrome.runtime.lastError) {
+                        console.error('Error getting pending pin data:', chrome.runtime.lastError);
+                        resolve(null);
+                    } else {
+                        resolve(result.pendingPinData);
+                    }
+                });
+            });
+
+            if (result && result.timestamp) {
+                // Check if the pending data is recent (within last 30 seconds)
+                const age = Date.now() - result.timestamp;
+                if (age < 30000) { // 30 seconds
+                    console.log('Found recent pending pin data:', result);
+                    
+                    // Clear the pending data
+                    chrome.storage.local.remove(['pendingPinData']);
+                    
+                    // Open the pin form with this data
+                    setTimeout(() => {
+                        this.openPinForm(result);
+                    }, 500); // Small delay to ensure UI is ready
+                } else {
+                    console.log('Pending pin data is too old, ignoring');
+                    chrome.storage.local.remove(['pendingPinData']);
+                }
+            }
+        } catch (error) {
+            console.error('Error checking pending pin data:', error);
+        }
     }
 
     async checkCurrentVideo() {
@@ -1089,53 +1128,74 @@ class PopupManager {
     }
 
     openPinForm(pinData) {
-        console.log('Opening pin form with data:', pinData);
+        console.log('=== OPENING PIN FORM ===');
+        console.log('Pin data received:', pinData);
         this.pendingPinData = pinData;
         
-        // Populate modal
-        if (this.elements.pinTimestamp) {
-            this.elements.pinTimestamp.textContent = this.formatTime(pinData.timestamp);
-            console.log('Set timestamp to:', this.formatTime(pinData.timestamp));
-        }
-        if (this.elements.pinVideoTitle) {
-            this.elements.pinVideoTitle.textContent = pinData.videoTitle;
-            console.log('Set video title to:', pinData.videoTitle);
-        }
-        if (this.elements.pinTitle) {
-            this.elements.pinTitle.value = '';
-        }
-        
-        // Show modal
-        if (this.elements.pinModal) {
-            this.elements.pinModal.classList.remove('hidden');
-            console.log('Pin modal should now be visible');
-        } else {
-            console.error('Pin modal element not found!');
-        }
-        
-        // Focus on title input
-        if (this.elements.pinTitle) {
-            setTimeout(() => {
-                this.elements.pinTitle.focus();
-            }, 100);
-        }
-        
-        // Switch to search tab if not already there
+        // Ensure we're on the search tab first
         if (this.currentTab !== 'search') {
+            console.log('Switching to search tab first');
             this.switchTab('search');
         }
 
-        // Also ensure the popup shows the search interface if it was showing "no video"
-        if (this.elements.noVideoMessage && !this.elements.noVideoMessage.classList.contains('hidden')) {
-            this.showSearchInterface();
-            // Update current video info from the pin data
+        // Update current video info from pin data if needed
+        if (!this.currentVideoInfo || !this.currentVideoInfo.isVideoPage) {
+            console.log('Updating current video info from pin data');
             this.currentVideoInfo = {
                 isVideoPage: true,
                 videoId: pinData.videoId,
                 title: pinData.videoTitle,
                 url: `https://www.youtube.com/watch?v=${pinData.videoId}`
             };
+            this.showSearchInterface();
         }
+        
+        // Populate modal elements
+        if (this.elements.pinTimestamp) {
+            this.elements.pinTimestamp.textContent = this.formatTime(pinData.timestamp);
+            console.log('Set timestamp to:', this.formatTime(pinData.timestamp));
+        } else {
+            console.error('Pin timestamp element not found');
+        }
+        
+        if (this.elements.pinVideoTitle) {
+            this.elements.pinVideoTitle.textContent = pinData.videoTitle;
+            console.log('Set video title to:', pinData.videoTitle);
+        } else {
+            console.error('Pin video title element not found');
+        }
+        
+        if (this.elements.pinTitle) {
+            this.elements.pinTitle.value = '';
+            console.log('Cleared pin title input');
+        } else {
+            console.error('Pin title input element not found');
+        }
+        
+        // Show modal
+        if (this.elements.pinModal) {
+            this.elements.pinModal.classList.remove('hidden');
+            console.log('Pin modal made visible');
+            console.log('Modal classes after show:', this.elements.pinModal.className);
+        } else {
+            console.error('Pin modal element not found!');
+            return;
+        }
+        
+        // Focus on title input with a small delay
+        if (this.elements.pinTitle) {
+            setTimeout(() => {
+                try {
+                    this.elements.pinTitle.focus();
+                    this.elements.pinTitle.select();
+                    console.log('Focused pin title input');
+                } catch (error) {
+                    console.error('Error focusing pin title input:', error);
+                }
+            }, 200);
+        }
+        
+        console.log('=== PIN FORM OPENED SUCCESSFULLY ===');
     }
 
     closePinModal() {
