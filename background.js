@@ -125,7 +125,6 @@ class BackgroundService {
 
     updateVideoInfo(videoInfo) {
         this.currentVideoInfo = videoInfo;
-        console.log('Updated video info:', videoInfo);
         
         // Notify popup if it's open about the video info update
         chrome.runtime.sendMessage({
@@ -230,8 +229,6 @@ class BackgroundService {
 
     async transcribeWithDeepgram(audioStreamUrl, videoId) {
         try {
-            console.log('Starting Deepgram transcription for video:', videoId);
-            
             // Get the Deepgram API key
             const apiKeys = await this.getApiKeys();
             const deepgramApiKey = apiKeys.deepgram;
@@ -252,8 +249,6 @@ class BackgroundService {
                 timestamps: 'true'
             });
             
-            console.log('Making request to Deepgram API...');
-            
             // Make the request to Deepgram
             const response = await fetch(`${deepgramUrl}?${params}`, {
                 method: 'POST',
@@ -268,30 +263,41 @@ class BackgroundService {
             
             if (!response.ok) {
                 const errorText = await response.text();
-                console.error('Deepgram API error:', response.status, errorText);
                 throw new Error(`Deepgram API error: ${response.status} ${errorText}`);
             }
             
             const data = await response.json();
-            console.log('Deepgram response received:', data);
             
-            // Parse the Deepgram response
-            const transcript = this.parseDeepgramResponse(data);
+            // Get video duration for dynamic chunking
+            let videoDuration = null;
+            try {
+                // Try to get duration from content script
+                const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+                if (tabs[0]) {
+                    const durationResponse = await chrome.tabs.sendMessage(tabs[0].id, { 
+                        action: 'getVideoDuration' 
+                    });
+                    videoDuration = durationResponse?.duration;
+                }
+                            } catch (error) {
+                    // Could not get video duration for dynamic chunking
+                }
+            
+            // Parse the Deepgram response with dynamic chunking
+            const transcript = this.parseDeepgramResponse(data, videoDuration);
             
             if (transcript && transcript.length > 0) {
                 // Save the transcript for future use
                 await this.saveTranscript(videoId, transcript);
-                console.log('Transcript saved successfully');
             }
             
             return transcript;
         } catch (error) {
-            console.error('Error in Deepgram transcription:', error);
             throw error;
         }
     }
 
-    parseDeepgramResponse(data) {
+    parseDeepgramResponse(data, videoDuration = null) {
         try {
             const transcript = [];
             
@@ -301,8 +307,11 @@ class BackgroundService {
                 if (alternatives && alternatives[0] && alternatives[0].words) {
                     const words = alternatives[0].words;
                     
-                    // Group words into segments (every 6 words or 5 seconds)
-                    const segmentDuration = 5; // seconds
+                    // Dynamic chunking based on video duration
+                    const chunkingParams = this.getDynamicChunkingParams(videoDuration);
+                    const segmentDuration = chunkingParams.segmentDuration;
+                    const maxWords = chunkingParams.maxWords;
+                    
                     let currentSegment = {
                         startTime: 0,
                         endTime: 0,
@@ -324,7 +333,7 @@ class BackgroundService {
                             const timeDiff = wordStart - currentSegment.startTime;
                             const wordCount = currentSegment.text.split(' ').length;
                             
-                            if (timeDiff >= segmentDuration || wordCount >= 6) {
+                            if (timeDiff >= segmentDuration || wordCount >= maxWords) {
                                 // Finish current segment
                                 transcript.push({
                                     startTime: Math.floor(currentSegment.startTime),
@@ -383,11 +392,60 @@ class BackgroundService {
                 }
             }
             
-            console.log('Parsed Deepgram transcript:', transcript.length, 'segments');
             return transcript;
         } catch (error) {
-            console.error('Error parsing Deepgram response:', error);
             return [];
+        }
+    }
+
+    // Get dynamic chunking parameters based on video duration
+    getDynamicChunkingParams(videoDuration) {
+        // Parse video duration if it's a string (e.g., "10:35")
+        let durationInSeconds = 0;
+        
+        if (typeof videoDuration === 'string') {
+            const parts = videoDuration.split(':').map(part => parseInt(part));
+            if (parts.length === 2) {
+                durationInSeconds = parts[0] * 60 + parts[1]; // MM:SS
+            } else if (parts.length === 3) {
+                durationInSeconds = parts[0] * 3600 + parts[1] * 60 + parts[2]; // HH:MM:SS
+            }
+        } else if (typeof videoDuration === 'number') {
+            durationInSeconds = videoDuration;
+        }
+        
+        const durationInMinutes = durationInSeconds / 60;
+        
+        // Dynamic chunking strategy:
+        // Short videos (< 10 min): Small, precise chunks for better granularity
+        // Medium videos (10-30 min): Balanced chunks
+        // Long videos (30-60 min): Larger chunks for efficiency
+        // Very long videos (> 60 min): Large chunks for performance
+        
+        if (durationInMinutes < 10) {
+            return {
+                segmentDuration: 5,    // 5 seconds
+                maxWords: 8,           // 8 words max (increased slightly from 6)
+                description: 'short'
+            };
+        } else if (durationInMinutes < 30) {
+            return {
+                segmentDuration: 8,    // 8 seconds
+                maxWords: 12,          // 12 words max
+                description: 'medium'
+            };
+        } else if (durationInMinutes < 60) {
+            return {
+                segmentDuration: 12,   // 12 seconds
+                maxWords: 18,          // 18 words max
+                description: 'long'
+            };
+        } else {
+            return {
+                segmentDuration: 15,   // 15 seconds
+                maxWords: 25,          // 25 words max
+                description: 'very_long'
+            };
         }
     }
 
@@ -422,17 +480,13 @@ class BackgroundService {
     // Pin management methods
     async savePin(pin) {
         return new Promise((resolve, reject) => {
-            console.log('Background: Saving pin:', pin);
-            
             chrome.storage.local.get(['pins'], (result) => {
                 if (chrome.runtime.lastError) {
-                    console.error('Background: Error getting pins from storage:', chrome.runtime.lastError);
                     reject(chrome.runtime.lastError);
                     return;
                 }
 
                 const pins = result.pins || [];
-                console.log('Background: Current pins count:', pins.length);
                 
                 // Generate unique ID for the pin
                 const pinId = Date.now().toString() + Math.random().toString(36).substr(2, 9);
@@ -443,15 +497,11 @@ class BackgroundService {
                 };
 
                 pins.push(newPin);
-                console.log('Background: Pin array after adding new pin:', pins.length);
 
                 chrome.storage.local.set({ pins: pins }, () => {
                     if (chrome.runtime.lastError) {
-                        console.error('Background: Error saving pins to storage:', chrome.runtime.lastError);
                         reject(chrome.runtime.lastError);
                     } else {
-                        console.log('Background: Pin saved successfully:', newPin);
-                        console.log('Background: Total pins now:', pins.length);
                         resolve();
                     }
                 });
@@ -476,21 +526,16 @@ class BackgroundService {
 
     async getAllPins() {
         return new Promise((resolve, reject) => {
-            console.log('Background: Getting all pins...');
-            
             chrome.storage.local.get(['pins'], (result) => {
                 if (chrome.runtime.lastError) {
-                    console.error('Background: Error getting pins from storage:', chrome.runtime.lastError);
                     reject(chrome.runtime.lastError);
                     return;
                 }
 
                 const pins = result.pins || [];
-                console.log('Background: Retrieved pins from storage:', pins.length, pins);
                 
                 // Sort by creation date, newest first
                 pins.sort((a, b) => b.createdAt - a.createdAt);
-                console.log('Background: Sorted pins, returning:', pins.length);
                 resolve(pins);
             });
         });
@@ -511,7 +556,6 @@ class BackgroundService {
                     if (chrome.runtime.lastError) {
                         reject(chrome.runtime.lastError);
                     } else {
-                        console.log('Pin deleted:', pinId);
                         resolve();
                     }
                 });
@@ -522,7 +566,6 @@ class BackgroundService {
     // Handle opening pin form from content script
     async handleOpenPinForm(pinData, sender) {
         try {
-            console.log('Background: Handling openPinForm request with data:', pinData);
             
             // Try to send message to popup if it's open
             // Since we can't directly check if popup is open, we'll use a different approach
@@ -543,14 +586,10 @@ class BackgroundService {
                 });
             });
 
-            console.log('Background: Stored pending pin data');
-
             // Try to open the extension popup programmatically
             try {
                 await chrome.action.openPopup();
-                console.log('Background: Popup opened successfully');
             } catch (error) {
-                console.log('Background: Could not open popup programmatically, trying alternative approaches:', error.message);
                 
                 // Alternative 1: Try to open extension in a new tab
                 try {
@@ -559,22 +598,19 @@ class BackgroundService {
                         url: extensionUrl,
                         active: true
                     });
-                    console.log('Background: Opened extension in new tab');
                 } catch (tabError) {
-                    console.log('Background: Could not open in new tab:', tabError.message);
                     
                     // Alternative 2: Show notification to user
                     try {
                         await chrome.action.setBadgeText({ text: '!' });
                         await chrome.action.setBadgeBackgroundColor({ color: '#ff4444' });
-                        console.log('Background: Set badge notification');
                         
                         // Clear badge after 5 seconds
                         setTimeout(() => {
                             chrome.action.setBadgeText({ text: '' });
                         }, 5000);
                     } catch (badgeError) {
-                        console.log('Background: Could not set badge:', badgeError.message);
+                        // Could not set badge
                     }
                 }
             }
@@ -585,7 +621,6 @@ class BackgroundService {
             };
             
         } catch (error) {
-            console.error('Background: Error handling openPinForm:', error);
             throw error;
         }
     }

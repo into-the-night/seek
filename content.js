@@ -84,7 +84,6 @@ class YouTubeVideoExtractor {
 
             return videoInfo;
         } catch (error) {
-            console.error('Error extracting video info:', error);
             return { 
                 isVideoPage: false, 
                 error: error.message 
@@ -146,7 +145,6 @@ class YouTubeVideoExtractor {
             
             throw new Error('No transcript available for this video');
         } catch (error) {
-            console.error('Error getting YouTube transcript:', error);
             throw error;
         }
     }
@@ -167,13 +165,11 @@ class YouTubeVideoExtractor {
             });
             
             if (response.error) {
-                console.error('Deepgram transcription failed:', response.error);
                 return null;
             }
             
             return response.transcript;
         } catch (error) {
-            console.error('Error in Deepgram transcription:', error);
             return null;
         }
     }
@@ -219,7 +215,7 @@ class YouTubeVideoExtractor {
                             }
                         }
                     } catch (e) {
-                        console.warn('Error parsing player response:', e);
+                        // Error parsing player response
                     }
                 }
             }
@@ -232,7 +228,6 @@ class YouTubeVideoExtractor {
             
             return null;
         } catch (error) {
-            console.error('Error extracting audio stream URL:', error);
             return null;
         }
     }
@@ -268,7 +263,6 @@ class YouTubeVideoExtractor {
             
             return null;
         } catch (error) {
-            console.error('Failed to get transcript from YouTube API:', error);
             return null;
         }
     }
@@ -320,7 +314,6 @@ class YouTubeVideoExtractor {
             
             return null;
         } catch (error) {
-            console.error('Failed to extract transcript from DOM:', error);
             return null;
         }
     }
@@ -358,6 +351,26 @@ class YouTubeVideoExtractor {
     async parseTranscriptElements(transcriptElements) {
         const transcript = [];
         
+        // Get video duration to inform timestamp parsing
+        const videoDuration = this.getVideoDuration();
+        let isLongVideo = false;
+        
+        if (videoDuration) {
+            // Parse duration to check if video is longer than 1 hour
+            const durationParts = videoDuration.split(':').map(part => parseInt(part));
+            let durationInSeconds = 0;
+            
+            if (durationParts.length === 2) {
+                // MM:SS format
+                durationInSeconds = durationParts[0] * 60 + durationParts[1];
+            } else if (durationParts.length === 3) {
+                // HH:MM:SS format  
+                durationInSeconds = durationParts[0] * 3600 + durationParts[1] * 60 + durationParts[2];
+            }
+            
+            isLongVideo = durationInSeconds >= 3600; // 1 hour or more
+        }
+        
         transcriptElements.forEach((element, index) => {
             // Try multiple selectors for time buttons
             const timeButtonSelectors = [
@@ -388,9 +401,9 @@ class YouTubeVideoExtractor {
                 
                 // Try to find time in the element's text content
                 const allText = element.textContent;
-                const timeMatch = allText.match(/(\d+):(\d+)/);
+                const timeMatch = allText.match(/(\d+):(\d+)(?::(\d+))?/);
                 if (timeMatch) {
-                    timeText = timeMatch[0];
+                    timeText = timeMatch[0]; // This now captures HH:MM:SS or MM:SS
                 }
                 
                 // Try to find time in data attributes
@@ -398,12 +411,18 @@ class YouTubeVideoExtractor {
                 for (const attr of dataAttrs) {
                     const attrValue = element.getAttribute(attr);
                     if (attrValue) {
-                        // Convert seconds to MM:SS format
+                        // Convert seconds to HH:MM:SS or MM:SS format based on duration
                         const seconds = parseInt(attrValue);
                         if (!isNaN(seconds)) {
-                            const mins = Math.floor(seconds / 60);
+                            const hours = Math.floor(seconds / 3600);
+                            const mins = Math.floor((seconds % 3600) / 60);
                             const secs = seconds % 60;
-                            timeText = `${mins}:${secs.toString().padStart(2, '0')}`;
+                            
+                            if (hours > 0) {
+                                timeText = `${hours}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+                            } else {
+                                timeText = `${mins}:${secs.toString().padStart(2, '0')}`;
+                            }
                             break;
                         }
                     }
@@ -413,21 +432,62 @@ class YouTubeVideoExtractor {
             if (timeText.includes(':') && textElement) {
                 const text = textElement.textContent.trim();
                 
-                // Parse time format (e.g., "0:30" or "1:23")
-                const timeMatch = timeText.match(/(\d+):(\d+)/);
+                // Parse time format (e.g., "0:30", "1:23", or "1:14:13")
+                let startTime = 0;
+                
+                // Handle both MM:SS and HH:MM:SS formats
+                const timeMatch = timeText.match(/(\d+):(\d+)(?::(\d+))?/);
                 if (timeMatch) {
-                    const minutes = parseInt(timeMatch[1]);
-                    const seconds = parseInt(timeMatch[2]);
-                    const startTime = minutes * 60 + seconds;
+                    if (timeMatch[3] !== undefined) {
+                        // HH:MM:SS format
+                        const hours = parseInt(timeMatch[1]);
+                        const minutes = parseInt(timeMatch[2]);
+                        const seconds = parseInt(timeMatch[3]);
+                        startTime = hours * 3600 + minutes * 60 + seconds;
+                    } else {
+                        // MM:SS format - YouTube transcripts always use MM:SS for two-part timestamps
+                        // regardless of video length
+                        const firstNum = parseInt(timeMatch[1]);
+                        const secondNum = parseInt(timeMatch[2]);
+                        
+                        // Always treat two-part timestamps as minutes:seconds
+                        // Examples: "56:30" = 56m 30s, "120:45" = 120m 45s
+                        startTime = firstNum * 60 + secondNum;
+                    }
                     
                     transcript.push({
                         startTime: startTime,
                         endTime: startTime + 5, // Estimate 5 seconds per segment
                         text: text
                     });
+                    
+                    // Format for logging (handle hours properly)
+                    const hours = Math.floor(startTime / 3600);
+                    const mins = Math.floor((startTime % 3600) / 60);
+                    const secs = Math.floor(startTime % 60);
                 }
             }
         });
+        
+        if (transcript.length > 0) {
+            // Format first segment time
+            const firstTime = transcript[0].startTime;
+            const firstHours = Math.floor(firstTime / 3600);
+            const firstMins = Math.floor((firstTime % 3600) / 60);
+            const firstSecs = Math.floor(firstTime % 60);
+            const firstTimeStr = firstHours > 0 ? 
+                `${firstHours}:${firstMins.toString().padStart(2, '0')}:${firstSecs.toString().padStart(2, '0')}` :
+                `${firstMins}:${firstSecs.toString().padStart(2, '0')}`;
+                
+            // Format last segment time  
+            const lastTime = transcript[transcript.length-1].startTime;
+            const lastHours = Math.floor(lastTime / 3600);
+            const lastMins = Math.floor((lastTime % 3600) / 60);
+            const lastSecsVal = Math.floor(lastTime % 60);
+            const lastTimeStr = lastHours > 0 ? 
+                `${lastHours}:${lastMins.toString().padStart(2, '0')}:${lastSecsVal.toString().padStart(2, '0')}` :
+                `${lastMins}:${lastSecsVal.toString().padStart(2, '0')}`;
+        }
         
         return transcript;
     }
@@ -451,7 +511,7 @@ class YouTubeVideoExtractor {
                             const captionTracks = JSON.parse(match[1]);
                             return captionTracks;
                         } catch (e) {
-                            console.error('Error parsing caption tracks:', e);
+                            // Error parsing caption tracks
                         }
                     }
                 }
@@ -459,7 +519,6 @@ class YouTubeVideoExtractor {
             
             return [];
         } catch (error) {
-            console.error('Error getting caption tracks:', error);
             return [];
         }
     }
@@ -477,7 +536,6 @@ class YouTubeVideoExtractor {
             
             return null;
         } catch (error) {
-            console.error('Error fetching caption track:', error);
             return null;
         }
     }
@@ -505,7 +563,6 @@ class YouTubeVideoExtractor {
             
             return transcript;
         } catch (error) {
-            console.error('Error parsing XML captions:', error);
             return null;
         }
     }
@@ -523,7 +580,6 @@ class YouTubeVideoExtractor {
             
             return null;
         } catch (error) {
-            console.error('Error parsing YouTube transcript response:', error);
             return null;
         }
     }
@@ -755,11 +811,7 @@ class YouTubeVideoExtractor {
             this.pinButton.addEventListener('click', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                try {
-                    this.handlePinButtonClick();
-                } catch (error) {
-                    console.error('Error in pin button click handler:', error);
-                }
+                this.handlePinButtonClick();
             });
 
             // Better insertion strategy - insert at the beginning of right controls
@@ -778,7 +830,6 @@ class YouTubeVideoExtractor {
             }
             
         } catch (error) {
-            console.error('Error creating pin button:', error);
             // If standard creation fails, try the floating button approach
             this.createFloatingPinButton();
         }
@@ -788,7 +839,6 @@ class YouTubeVideoExtractor {
         try {
             const video = document.querySelector('video');
             if (!video) {
-                console.error('No video element found');
                 this.showPinButtonFeedback('❌ No video found', 'error');
                 return;
             }
@@ -799,7 +849,6 @@ class YouTubeVideoExtractor {
             const channelName = this.getChannelName();
 
             if (!videoId) {
-                console.error('Could not get video ID');
                 this.showPinButtonFeedback('❌ Could not get video ID', 'error');
                 return;
             }
@@ -816,7 +865,6 @@ class YouTubeVideoExtractor {
             });
             
         } catch (error) {
-            console.error('Error in handlePinButtonClick:', error);
             this.showPinButtonFeedback('❌ Error creating pin', 'error');
         }
     }
@@ -1105,7 +1153,6 @@ class YouTubeVideoExtractor {
                 this.showPinButtonFeedback('✅ Pin saved!', 'success');
                 closeOverlay();
             } catch (error) {
-                console.error('Error saving pin:', error);
                 this.showPinButtonFeedback('❌ Error saving pin', 'error');
             }
         };
@@ -1141,9 +1188,15 @@ class YouTubeVideoExtractor {
     }
 
     formatTime(seconds) {
-        const minutes = Math.floor(seconds / 60);
-        const remainingSeconds = seconds % 60;
-        return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+        const hours = Math.floor(seconds / 3600);
+        const mins = Math.floor((seconds % 3600) / 60);
+        const secs = Math.floor(seconds % 60);
+        
+        if (hours > 0) {
+            return `${hours}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+        } else {
+            return `${mins}:${secs.toString().padStart(2, '0')}`;
+        }
     }
 }
 
@@ -1170,6 +1223,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             timestamp: timestamp,
             channelName: channelName
         });
+    } else if (request.action === 'getVideoDuration') {
+        const duration = videoExtractor.getVideoDuration();
+        sendResponse({ duration: duration });
     }
 });
 

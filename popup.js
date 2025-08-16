@@ -56,13 +56,6 @@ class PopupManager {
             this.elements.createPinBtn.classList.add('hidden');
         }
 
-        // Verify all modal elements exist for debugging
-        if (!this.elements.closePinModal) {
-            console.warn('Close pin modal button not found');
-        }
-        if (!this.elements.cancelPin) {
-            console.warn('Cancel pin button not found');
-        }
     }
 
     setupEventListeners() {
@@ -78,6 +71,15 @@ class PopupManager {
             this.elements.searchInput.addEventListener('keypress', (e) => {
                 if (e.key === 'Enter') {
                     this.handleSearch();
+                }
+            });
+            
+            // Clear results when input is cleared
+            this.elements.searchInput.addEventListener('input', (e) => {
+                if (e.target.value.trim() === '') {
+                    this.elements.results.classList.add('hidden');
+                    this.elements.resultsContent.innerHTML = '';
+                    this.updateCreatePinButtonVisibility();
                 }
             });
         }
@@ -141,11 +143,9 @@ class PopupManager {
         // Listen for messages from content script
         chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             if (request.action === 'openPinForm') {
-                console.log('Received openPinForm message:', request.pinData);
                 // Open pin form with the provided data, even if currentVideoInfo isn't loaded yet
                 this.openPinForm(request.pinData);
             } else if (request.action === 'videoInfoUpdated') {
-                console.log('Received videoInfoUpdated message:', request.videoInfo);
                 // Update current video info when video changes
                 this.handleVideoInfoUpdate(request.videoInfo);
             }
@@ -158,7 +158,6 @@ class PopupManager {
             const result = await new Promise((resolve) => {
                 chrome.storage.local.get(['pendingPinData'], (result) => {
                     if (chrome.runtime.lastError) {
-                        console.error('Error getting pending pin data:', chrome.runtime.lastError);
                         resolve(null);
                     } else {
                         resolve(result.pendingPinData);
@@ -170,8 +169,6 @@ class PopupManager {
                 // Check if the pending data is recent (within last 30 seconds)
                 const age = Date.now() - result.timestamp;
                 if (age < 30000) { // 30 seconds
-                    console.log('Found recent pending pin data:', result);
-                    
                     // Clear the pending data
                     chrome.storage.local.remove(['pendingPinData']);
                     
@@ -180,12 +177,11 @@ class PopupManager {
                         this.openPinForm(result);
                     }, 500); // Small delay to ensure UI is ready
                 } else {
-                    console.log('Pending pin data is too old, ignoring');
                     chrome.storage.local.remove(['pendingPinData']);
                 }
             }
         } catch (error) {
-            console.error('Error checking pending pin data:', error);
+            // Error checking pending pin data
         }
     }
 
@@ -212,13 +208,15 @@ class PopupManager {
                 this.showNoVideoMessage();
             }
         } catch (error) {
-            console.error('Error checking video:', error);
             this.showNoVideoMessage();
         }
     }
 
     updateCreatePinButtonVisibility() {
-        if (this.currentTab === 'search' && this.currentVideoInfo && this.currentVideoInfo.isVideoPage) {
+        // Check if results are currently displayed
+        const resultsAreVisible = !this.elements.results.classList.contains('hidden');
+        
+        if (this.currentTab === 'search' && this.currentVideoInfo && this.currentVideoInfo.isVideoPage && !resultsAreVisible) {
             this.elements.createPinBtn.classList.remove('hidden');
         } else {
             this.elements.createPinBtn.classList.add('hidden');
@@ -284,7 +282,6 @@ class PopupManager {
             this.showStatus('Search completed!', 'success');
             
         } catch (error) {
-            console.error('Search error:', error);
             this.showStatus(`Error: ${error.message}`, 'error');
         } finally {
             this.isProcessing = false;
@@ -298,7 +295,7 @@ class PopupManager {
         return new Promise((resolve, reject) => {
             chrome.runtime.sendMessage({ action: 'getApiKeys' }, (response) => {
                 if (chrome.runtime.lastError) {
-                    reject(new Error(chrome.runtime.lastError.message));
+                    reject(new Error(chrome.runtime.lastError.message || 'API key retrieval failed'));
                 } else if (response && response.error) {
                     reject(new Error(response.error));
                 } else if (response) {
@@ -317,7 +314,6 @@ class PopupManager {
         const cachedTranscript = await new Promise((resolve) => {
             chrome.runtime.sendMessage({ action: 'getTranscript', videoId }, (response) => {
                 if (chrome.runtime.lastError) {
-                    console.error('Error getting transcript:', chrome.runtime.lastError);
                     resolve(null);
                 } else {
                     resolve(response && !response.error ? response : null);
@@ -330,7 +326,8 @@ class PopupManager {
         }
 
         // Generate new transcript using Deepgram
-        return await this.generateTranscript(videoId);
+        const newTranscript = await this.generateTranscript(videoId);
+        return newTranscript;
     }
 
     async generateTranscript(videoId) {
@@ -347,9 +344,6 @@ class PopupManager {
                         videoId, 
                         transcript: transcript 
                     }, (response) => {
-                        if (chrome.runtime.lastError) {
-                            console.error('Error saving transcript:', chrome.runtime.lastError);
-                        }
                         resolve(response);
                     });
                 });
@@ -357,7 +351,7 @@ class PopupManager {
                 return transcript;
             }
         } catch (error) {
-            // YouTube transcript not available, try Deepgram
+            // YouTube built-in transcript failed
         }
         
         // Fallback to Deepgram (if available)
@@ -372,16 +366,12 @@ class PopupManager {
                         videoId, 
                         transcript: transcript 
                     }, (response) => {
-                        if (chrome.runtime.lastError) {
-                            console.error('Error saving transcript:', chrome.runtime.lastError);
-                        }
                         resolve(response);
                     });
                 });
                 
                 return transcript;
             } catch (error) {
-                console.error('Deepgram transcription failed:', error);
                 throw new Error('Unable to generate transcript. Please ensure the video has captions or try again later.');
             }
         }
@@ -406,7 +396,6 @@ class PopupManager {
             
             throw new Error('No transcript available');
         } catch (error) {
-            console.error('Error getting YouTube transcript:', error);
             throw error;
         }
     }
@@ -432,7 +421,6 @@ class PopupManager {
             
             throw new Error('No transcript received from Deepgram');
         } catch (error) {
-            console.error('Error getting Deepgram transcript:', error);
             throw new Error(`Deepgram transcription failed: ${error.message}`);
         }
     }
@@ -454,7 +442,6 @@ class PopupManager {
                 videoId: this.currentVideoInfo.videoId 
             }, (response) => {
                 if (chrome.runtime.lastError) {
-                    console.error('Error getting embeddings:', chrome.runtime.lastError);
                     resolve(null);
                 } else {
                     resolve(response && !response.error ? response : null);
@@ -476,9 +463,7 @@ class PopupManager {
                 videoId: this.currentVideoInfo.videoId,
                 embeddings: embeddings 
             }, (response) => {
-                if (chrome.runtime.lastError) {
-                    console.error('Error saving embeddings:', chrome.runtime.lastError);
-                }
+
                 resolve(response);
             });
         });
@@ -496,27 +481,13 @@ class PopupManager {
             throw new Error('No embedding API key configured. Please configure OpenAI, Hugging Face, or Google AI API key.');
         }
 
-        // Split transcript into chunks with smaller size for better precision
-        const chunks = this.splitTranscriptIntoChunks(transcript, 350); // 350 chars per chunk
-        const embeddings = [];
-
-        for (let i = 0; i < chunks.length; i++) {
-            this.showStatus(`Generating embeddings with ${embeddingModel.name}... (${i + 1}/${chunks.length})`, 'loading');
-            
-            try {
-                const embedding = await this.generateEmbedding(chunks[i], embeddingModel, apiKeys);
-                embeddings.push({
-                    text: chunks[i].text,
-                    startTime: chunks[i].startTime,
-                    endTime: chunks[i].endTime,
-                    embedding: embedding
-                });
-            } catch (error) {
-                console.error('Error generating embedding for chunk:', error);
-                // Continue with other chunks
-            }
-        }
-
+        // Split transcript into chunks with dynamic size based on transcript length
+        const dynamicChunkSize = this.getDynamicChunkSize(transcript);
+        const chunks = this.splitTranscriptIntoChunks(transcript, dynamicChunkSize);
+        
+        // Use batch processing for better performance on long transcripts
+        const embeddings = await this.processEmbeddingsInBatches(chunks, embeddingModel, apiKeys);
+        
         return embeddings;
     }
 
@@ -613,6 +584,108 @@ class PopupManager {
         return data.embedding.values;
     }
 
+    // Get dynamic chunk size based on transcript length for optimal embedding performance
+    getDynamicChunkSize(transcript) {
+        const transcriptLength = transcript.length;
+        
+        // Dynamic chunking strategy for embeddings:
+        // Short transcripts (< 50 segments): Smaller chunks for precision
+        // Medium transcripts (50-200 segments): Balanced chunks
+        // Long transcripts (200-500 segments): Larger chunks for efficiency
+        // Very long transcripts (> 500 segments): Large chunks for performance
+        
+        let chunkSize, strategy;
+        
+        if (transcriptLength < 50) {
+            chunkSize = 350;   // Small chunks for precision
+            strategy = 'precise';
+        } else if (transcriptLength < 200) {
+            chunkSize = 500;   // Medium chunks
+            strategy = 'balanced';
+        } else if (transcriptLength < 500) {
+            chunkSize = 750;   // Large chunks for efficiency
+            strategy = 'efficient';
+        } else {
+            chunkSize = 1000;  // Very large chunks for performance
+            strategy = 'performance';
+        }
+        
+        return chunkSize;
+    }
+
+    // Process embeddings in batches for better performance
+    async processEmbeddingsInBatches(chunks, embeddingModel, apiKeys) {
+        const embeddings = [];
+        const totalChunks = chunks.length;
+        
+        // Determine batch size based on number of chunks
+        let batchSize;
+        if (totalChunks < 50) {
+            batchSize = 1;     // Sequential processing for small transcripts
+        } else if (totalChunks < 200) {
+            batchSize = 5;     // Small batches for medium transcripts
+        } else if (totalChunks < 500) {
+            batchSize = 10;    // Medium batches for long transcripts
+        } else {
+            batchSize = 15;    // Large batches for very long transcripts
+        }
+        
+        // Process chunks in batches
+        for (let i = 0; i < chunks.length; i += batchSize) {
+            const batch = chunks.slice(i, i + batchSize);
+            const batchNumber = Math.floor(i / batchSize) + 1;
+            const totalBatches = Math.ceil(chunks.length / batchSize);
+            
+            this.showStatus(
+                `Generating embeddings with ${embeddingModel.name}... Batch ${batchNumber}/${totalBatches} (${i + 1}-${Math.min(i + batchSize, totalChunks)}/${totalChunks})`, 
+                'loading'
+            );
+            
+            // Process batch concurrently for better performance
+            const batchPromises = batch.map(async (chunk, batchIndex) => {
+                try {
+                    const embedding = await this.generateEmbedding(chunk, embeddingModel, apiKeys);
+                    return {
+                        text: chunk.text,
+                        startTime: chunk.startTime,
+                        endTime: chunk.endTime,
+                        embedding: embedding,
+                        originalIndex: i + batchIndex
+                    };
+                } catch (error) {
+                    return null; // Skip failed chunks
+                }
+            });
+            
+            try {
+                const batchResults = await Promise.all(batchPromises);
+                
+                // Add successful results to embeddings array
+                batchResults.forEach(result => {
+                    if (result) {
+                        embeddings.push(result);
+                    }
+                });
+                
+                // Small delay between batches to avoid rate limiting
+                if (i + batchSize < chunks.length) {
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                }
+                
+            } catch (error) {
+                // Continue with next batch
+            }
+        }
+        
+        // Sort embeddings by original index to maintain order
+        embeddings.sort((a, b) => a.originalIndex - b.originalIndex);
+        
+        // Remove the originalIndex property
+        embeddings.forEach(embedding => delete embedding.originalIndex);
+        
+        return embeddings;
+    }
+
     splitTranscriptIntoChunks(transcript, maxChars = 350) {
         const chunks = [];
         let currentChunk = '';
@@ -651,7 +724,9 @@ class PopupManager {
                         });
                     }
                     
+                    // Reset chunk with remaining text and current entry's start time
                     currentChunk = remainingText;
+                    currentStartTime = entry.startTime;
                 } else {
                     // No sentence boundaries found, split as before
                     chunks.push({
@@ -660,9 +735,8 @@ class PopupManager {
                         endTime: currentEndTime
                     });
                     currentChunk = '';
+                    currentStartTime = entry.startTime;
                 }
-                
-                currentStartTime = entry.startTime;
             }
             
             if (currentChunk.length === 0) {
@@ -713,7 +787,7 @@ class PopupManager {
         const dynamicThreshold = sortedSimilarities.length > 0 ? 
             Math.max(0.3, sortedSimilarities[0].similarity * 0.6) : 0.3;
         
-        return sortedSimilarities
+        const results = sortedSimilarities
             .filter(item => item.similarity > dynamicThreshold) // Intelligent similarity filtering
             .slice(0, 8) // Return more results for better coverage
             .map(item => ({
@@ -722,6 +796,8 @@ class PopupManager {
                 text: item.text,
                 similarity: item.similarity
             }));
+
+        return results;
     }
 
     cosineSimilarity(a, b) {
@@ -768,9 +844,12 @@ class PopupManager {
         const similarityClass = result.similarity > 0.8 ? 'high-similarity' : 
                                result.similarity > 0.6 ? 'medium-similarity' : 'low-similarity';
         
+        // Truncate text for easier navigation
+        const truncatedText = this.truncateText(result.text, 150); // Show first 150 characters
+        
         div.innerHTML = `
             <div class="result-timestamp">${this.formatTime(result.startTime)} - ${this.formatTime(result.endTime)}</div>
-            <div class="result-text">${result.text}</div>
+            <div class="result-text">${truncatedText}</div>
             <div class="result-similarity ${similarityClass}">Match: ${Math.round(result.similarity * 100)}%</div>
         `;
         
@@ -781,10 +860,21 @@ class PopupManager {
         return div;
     }
 
-    formatTime(seconds) {
-        const mins = Math.floor(seconds / 60);
-        const secs = seconds % 60;
-        return `${mins}:${secs.toString().padStart(2, '0')}`;
+    // Truncate text intelligently at word boundaries
+    truncateText(text, maxLength = 150) {
+        if (text.length <= maxLength) {
+            return text;
+        }
+        
+        // Find the last space before maxLength to avoid cutting words
+        let truncated = text.substring(0, maxLength);
+        const lastSpaceIndex = truncated.lastIndexOf(' ');
+        
+        if (lastSpaceIndex > maxLength * 0.8) { // If there's a space reasonably close
+            truncated = truncated.substring(0, lastSpaceIndex);
+        }
+        
+        return truncated + '...';
     }
 
     async navigateToTimestamp(timestamp) {
@@ -795,7 +885,7 @@ class PopupManager {
                 timestamp 
             });
         } catch (error) {
-            console.error('Error navigating to timestamp:', error);
+            // Error navigating to timestamp
         }
     }
 
@@ -806,16 +896,12 @@ class PopupManager {
             this.statusTimeout = null;
         }
         
-        let statusHTML = message;
-        
-        if (type === 'loading') {
-            statusHTML = `<div class="loading-spinner"></div>${message}`;
-        }
-        
-        this.elements.status.innerHTML = statusHTML;
+        // Simply update the text content
+        this.elements.status.textContent = message;
         this.elements.status.className = `status ${type}`;
         this.elements.status.classList.remove('hidden');
         
+        // Auto-hide success or error messages after 3 seconds
         if (type === 'success' || type === 'error') {
             this.statusTimeout = setTimeout(() => {
                 if (this.elements.status) {
@@ -831,14 +917,11 @@ class PopupManager {
             // Clear transcripts and embeddings from storage
             await new Promise((resolve) => {
                 chrome.storage.local.clear(() => {
-                    if (chrome.runtime.lastError) {
-                        console.error('Error clearing cache:', chrome.runtime.lastError);
-                    }
                     resolve();
                 });
             });
         } catch (error) {
-            console.error('Error clearing cache:', error);
+            // Error clearing cache
         }
     }
 
@@ -1031,9 +1114,6 @@ class PopupManager {
                         googleAI: googleAiKey 
                     } 
                 }, (response) => {
-                    if (chrome.runtime.lastError) {
-                        console.error('Error saving API keys:', chrome.runtime.lastError);
-                    }
                     resolve(response);
                 });
             });
@@ -1102,10 +1182,12 @@ class PopupManager {
         // Load pins if switching to pins tab
         if (tabName === 'pins') {
             this.loadPins();
+            // Always hide create pin button when on pins tab
+            this.elements.createPinBtn.classList.add('hidden');
+        } else {
+            // Update create pin button visibility for search tab
+            this.updateCreatePinButtonVisibility();
         }
-
-        // Update create pin button visibility
-        this.updateCreatePinButtonVisibility();
     }
 
     // Pin creation functionality
@@ -1132,19 +1214,15 @@ class PopupManager {
     }
 
     openPinForm(pinData) {
-        console.log('=== OPENING PIN FORM ===');
-        console.log('Pin data received:', pinData);
         this.pendingPinData = pinData;
         
         // Ensure we're on the search tab first
         if (this.currentTab !== 'search') {
-            console.log('Switching to search tab first');
             this.switchTab('search');
         }
 
         // Update current video info from pin data if needed
         if (!this.currentVideoInfo || !this.currentVideoInfo.isVideoPage) {
-            console.log('Updating current video info from pin data');
             this.currentVideoInfo = {
                 isVideoPage: true,
                 videoId: pinData.videoId,
@@ -1157,32 +1235,20 @@ class PopupManager {
         // Populate modal elements
         if (this.elements.pinTimestamp) {
             this.elements.pinTimestamp.textContent = this.formatTime(pinData.timestamp);
-            console.log('Set timestamp to:', this.formatTime(pinData.timestamp));
-        } else {
-            console.error('Pin timestamp element not found');
         }
         
         if (this.elements.pinVideoTitle) {
             this.elements.pinVideoTitle.textContent = pinData.videoTitle;
-            console.log('Set video title to:', pinData.videoTitle);
-        } else {
-            console.error('Pin video title element not found');
         }
         
         if (this.elements.pinTitle) {
             this.elements.pinTitle.value = '';
-            console.log('Cleared pin title input');
-        } else {
-            console.error('Pin title input element not found');
         }
         
         // Show modal
         if (this.elements.pinModal) {
             this.elements.pinModal.classList.remove('hidden');
-            console.log('Pin modal made visible');
-            console.log('Modal classes after show:', this.elements.pinModal.className);
         } else {
-            console.error('Pin modal element not found!');
             return;
         }
         
@@ -1192,14 +1258,11 @@ class PopupManager {
                 try {
                     this.elements.pinTitle.focus();
                     this.elements.pinTitle.select();
-                    console.log('Focused pin title input');
                 } catch (error) {
-                    console.error('Error focusing pin title input:', error);
+                    // Error focusing pin title input
                 }
             }, 200);
         }
-        
-        console.log('=== PIN FORM OPENED SUCCESSFULLY ===');
     }
 
     closePinModal() {
@@ -1214,10 +1277,8 @@ class PopupManager {
 
     async savePinFromModal() {
         const title = this.elements.pinTitle.value.trim();
-        console.log('Attempting to save pin with title:', title);
         
         if (!title || !this.pendingPinData) {
-            console.log('Cannot save pin - missing title or pending data:', { title, pendingPinData: this.pendingPinData });
             return;
         }
 
@@ -1228,14 +1289,11 @@ class PopupManager {
             videoTitle: this.pendingPinData.videoTitle,
             channelName: this.pendingPinData.channelName
         };
-        
-        console.log('Saving pin:', pin);
 
         try {
             // Save pin via background script
             await new Promise((resolve, reject) => {
                 chrome.runtime.sendMessage({ action: 'savePin', pin: pin }, (response) => {
-                    console.log('Save pin response:', response);
                     if (chrome.runtime.lastError) {
                         reject(chrome.runtime.lastError);
                     } else if (response && response.success) {
@@ -1245,28 +1303,18 @@ class PopupManager {
                     }
                 });
             });
-
-            console.log('Pin saved successfully - now testing retrieval');
-            
-            // Test if we can retrieve the pin immediately after saving
-            const testAllPins = await this.getAllPins();
-            console.log('Pins after save:', testAllPins);
             
             // Close modal
             this.closePinModal();
 
             // Refresh pins if on pins tab
             if (this.currentTab === 'pins') {
-                console.log('Refreshing pins display since we are on pins tab');
                 this.loadPins();
-            } else {
-                console.log('Not on pins tab, current tab:', this.currentTab);
             }
 
             // Show success message
             this.showStatus('Pin created successfully!', 'success');
         } catch (error) {
-            console.error('Error saving pin:', error);
             this.showStatus('Error creating pin', 'error');
         }
     }
@@ -1274,35 +1322,19 @@ class PopupManager {
     // Load and display pins
     async loadPins() {
         try {
-            console.log('=== LOADING PINS ===');
-            console.log('Current video info:', this.currentVideoInfo);
-            console.log('Current tab:', this.currentTab);
-            console.log('Pins tab element:', this.elements.pinsTab);
-            console.log('All pins content element:', this.elements.allPinsContent);
-            
             // Get pins for current video
             const videoPins = this.currentVideoInfo && this.currentVideoInfo.isVideoPage
                 ? await this.getPins(this.currentVideoInfo.videoId)
                 : [];
 
-            console.log('Video pins retrieved:', videoPins);
-
             // Get all pins
-            console.log('Requesting all pins...');
             const allPins = await this.getAllPins();
-            console.log('All pins retrieved:', allPins);
 
             // Update UI
-            console.log('Updating video pins display...');
             this.displayVideoPins(videoPins);
-            
-            console.log('Updating all pins display...');
             this.displayAllPins(allPins);
-            
-            console.log('=== PINS LOADING COMPLETED ===');
         } catch (error) {
-            console.error('Error loading pins:', error);
-            console.error('Error stack:', error.stack);
+            // Error loading pins
         }
     }
 
@@ -1345,47 +1377,25 @@ class PopupManager {
     }
 
     displayAllPins(pins) {
-        console.log('=== DISPLAYING ALL PINS ===');
-        console.log('Pins data:', pins);
-        console.log('Pins count:', pins.length);
-        console.log('All pins container element:', this.elements.allPinsContent);
-        console.log('Container innerHTML before:', this.elements.allPinsContent?.innerHTML);
-        
         if (pins.length > 0) {
-            console.log('Creating pin elements for', pins.length, 'pins');
             const pinElements = pins.map((pin, index) => {
-                console.log(`Creating element for pin ${index}:`, pin);
                 const element = this.createPinElement(pin);
-                console.log(`Generated HTML for pin ${index}:`, element);
                 return element;
             });
             
             const joinedHTML = pinElements.join('');
-            console.log('Final joined HTML:', joinedHTML);
             
             this.elements.allPinsContent.innerHTML = joinedHTML;
-            console.log('Container innerHTML after:', this.elements.allPinsContent.innerHTML);
-            
-            // Check if elements are actually in the DOM
-            const renderedPins = this.elements.allPinsContent.querySelectorAll('.pin-item');
-            console.log('Rendered pins count in DOM:', renderedPins.length);
-            renderedPins.forEach((pin, index) => {
-                const rect = pin.getBoundingClientRect();
-                console.log(`Pin ${index} dimensions:`, rect.width, 'x', rect.height, 'visible:', rect.width > 0 && rect.height > 0);
-            });
             
             this.setupPinEventListeners(this.elements.allPinsContent);
         } else {
-            console.log('No pins to display, showing empty state');
             this.elements.allPinsContent.innerHTML = `
                 <div class="no-pins">
                     <div class="icon">📌</div>
                     <div>No pins created yet</div>
-                </div>
-            `;
+                            </div>
+        `;
         }
-        
-        console.log('=== DISPLAY ALL PINS COMPLETED ===');
     }
 
     createPinElement(pin) {
@@ -1446,7 +1456,6 @@ class PopupManager {
             // Close popup
             window.close();
         } catch (error) {
-            console.error('Error navigating to pin:', error);
             this.showStatus('Error navigating to pin', 'error');
         }
     }
@@ -1469,7 +1478,6 @@ class PopupManager {
             this.loadPins();
             this.showStatus('Pin deleted', 'success');
         } catch (error) {
-            console.error('Error deleting pin:', error);
             this.showStatus('Error deleting pin', 'error');
         }
     }
@@ -1507,9 +1515,15 @@ class PopupManager {
 
     // Utility methods
     formatTime(seconds) {
-        const minutes = Math.floor(seconds / 60);
-        const remainingSeconds = seconds % 60;
-        return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+        const hours = Math.floor(seconds / 3600);
+        const mins = Math.floor((seconds % 3600) / 60);
+        const secs = Math.floor(seconds % 60);
+        
+        if (hours > 0) {
+            return `${hours}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+        } else {
+            return `${mins}:${secs.toString().padStart(2, '0')}`;
+        }
     }
 
     escapeHtml(text) {
@@ -1518,207 +1532,7 @@ class PopupManager {
         return div.innerHTML;
     }
 
-    showStatus(message, type = 'info') {
-        if (this.elements.status) {
-            this.elements.status.textContent = message;
-            this.elements.status.className = `status ${type}`;
-            this.elements.status.classList.remove('hidden');
-            
-            setTimeout(() => {
-                this.elements.status.classList.add('hidden');
-            }, 3000);
-        }
-    }
-
-    // Debug function to test modal functionality
-    debugTestModal() {
-        console.log('Testing modal functionality...');
-        console.log('Modal element:', this.elements.pinModal);
-        console.log('Modal classes before:', this.elements.pinModal?.className);
-        
-        this.openPinForm({
-            videoId: 'test123',
-            timestamp: 60,
-            videoTitle: 'Test Video',
-            channelName: 'Test Channel'
-        });
-        
-        console.log('Modal classes after openPinForm:', this.elements.pinModal?.className);
-    }
-
-    // Debug function to create a test pin immediately
-    async debugCreateTestPin() {
-        console.log('=== CREATING TEST PIN ===');
-        
-        const testPin = {
-            videoId: 'debug_test_video_' + Date.now(),
-            timestamp: 42,
-            title: 'Debug Test Pin ' + Date.now(),
-            videoTitle: 'Debug Test Video Title',
-            channelName: 'Debug Test Channel'
-        };
-
-        try {
-            console.log('Sending test pin to background script:', testPin);
-            const response = await new Promise((resolve, reject) => {
-                chrome.runtime.sendMessage({ action: 'savePin', pin: testPin }, (response) => {
-                    if (chrome.runtime.lastError) {
-                        reject(chrome.runtime.lastError);
-                    } else {
-                        resolve(response);
-                    }
-                });
-            });
-            
-            console.log('Test pin save response:', response);
-            
-            if (response && response.success) {
-                console.log('✅ Test pin created successfully');
-                
-                // Switch to pins tab
-                console.log('Switching to pins tab...');
-                this.switchTab('pins');
-                
-                // Wait a moment for the tab switch to complete
-                await new Promise(resolve => setTimeout(resolve, 100));
-                
-                // Check all pins directly
-                console.log('Testing getAllPins directly...');
-                const allPins = await this.getAllPins();
-                console.log('All pins after test creation:', allPins);
-                
-                // Force reload pins
-                console.log('Force reloading pins...');
-                await this.loadPins();
-                
-                return true;
-            } else {
-                console.error('❌ Test pin creation failed:', response);
-                return false;
-            }
-        } catch (error) {
-            console.error('❌ Error creating test pin:', error);
-            console.error('Error stack:', error.stack);
-            return false;
-        }
-    }
-
-    // Quick test function that can be called from console
-    async quickTest() {
-        console.log('=== QUICK PIN TEST ===');
-        
-        // Test 1: Create a test pin
-        console.log('Step 1: Creating test pin...');
-        const created = await this.debugCreateTestPin();
-        
-        if (created) {
-            console.log('✅ Test completed successfully');
-        } else {
-            console.log('❌ Test failed');
-        }
-        
-        // Test 2: Check if container exists and is visible
-        console.log('Step 2: Checking container...');
-        console.log('All pins container:', this.elements.allPinsContent);
-        console.log('Container classes:', this.elements.allPinsContent?.className);
-        console.log('Container style:', this.elements.allPinsContent?.style?.cssText);
-        
-        const rect = this.elements.allPinsContent?.getBoundingClientRect();
-        console.log('Container dimensions:', rect?.width, 'x', rect?.height);
-        
-        return created;
-    }
-
-    // Debug function to test pin storage functionality
-    async debugTestPinStorage() {
-        console.log('Testing pin storage functionality...');
-        
-        const testPin = {
-            videoId: 'test123',
-            timestamp: 60,
-            title: 'Test Pin Storage',
-            videoTitle: 'Test Video',
-            channelName: 'Test Channel'
-        };
-
-        try {
-            // Test save pin
-            console.log('Testing save pin...');
-            const saveResponse = await new Promise((resolve, reject) => {
-                chrome.runtime.sendMessage({ action: 'savePin', pin: testPin }, (response) => {
-                    if (chrome.runtime.lastError) {
-                        reject(chrome.runtime.lastError);
-                    } else {
-                        resolve(response);
-                    }
-                });
-            });
-            
-            console.log('Save pin response:', saveResponse);
-            
-            if (saveResponse && saveResponse.success) {
-                console.log('✓ Save pin test passed');
-                
-                // Test get all pins
-                console.log('Testing get all pins...');
-                const allPins = await new Promise((resolve, reject) => {
-                    chrome.runtime.sendMessage({ action: 'getAllPins' }, (response) => {
-                        if (chrome.runtime.lastError) {
-                            reject(chrome.runtime.lastError);
-                        } else {
-                            resolve(response);
-                        }
-                    });
-                });
-                
-                console.log('All pins response:', allPins);
-                
-                if (allPins && Array.isArray(allPins)) {
-                    console.log('✓ Get all pins test passed');
-                    console.log('Current pins count:', allPins.length);
-                    
-                    // Find our test pin
-                    const testPinFound = allPins.find(pin => pin.title === 'Test Pin Storage');
-                    if (testPinFound) {
-                        console.log('✓ Test pin found in storage:', testPinFound);
-                        
-                        // Test delete pin
-                        console.log('Testing delete pin...');
-                        const deleteResponse = await new Promise((resolve, reject) => {
-                            chrome.runtime.sendMessage({ action: 'deletePin', pinId: testPinFound.id }, (response) => {
-                                if (chrome.runtime.lastError) {
-                                    reject(chrome.runtime.lastError);
-                                } else {
-                                    resolve(response);
-                                }
-                            });
-                        });
-                        
-                        console.log('Delete pin response:', deleteResponse);
-                        
-                        if (deleteResponse && deleteResponse.success) {
-                            console.log('✓ Delete pin test passed');
-                            console.log('✅ All pin storage tests completed successfully!');
-                        } else {
-                            console.error('✗ Delete pin test failed');
-                        }
-                    } else {
-                        console.error('✗ Test pin not found in storage');
-                    }
-                } else {
-                    console.error('✗ Get all pins test failed');
-                }
-            } else {
-                console.error('✗ Save pin test failed');
-            }
-        } catch (error) {
-            console.error('Pin storage test error:', error);
-        }
-    }
-
     handleVideoInfoUpdate(videoInfo) {
-        console.log('Updating video info from:', this.currentVideoInfo, 'to:', videoInfo);
-        
         const wasOnVideoPage = this.currentVideoInfo && this.currentVideoInfo.isVideoPage;
         const isNowOnVideoPage = videoInfo && videoInfo.isVideoPage;
         const previousVideoId = this.currentVideoInfo ? this.currentVideoInfo.videoId : null;
@@ -1753,24 +1567,4 @@ class PopupManager {
 // Initialize popup manager when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
     window.popupManager = new PopupManager();
-    console.log('=== POPUP MANAGER INITIALIZED ===');
-    console.log('Popup manager:', window.popupManager);
-    console.log('\n🔧 Debug functions available:');
-    console.log('- window.popupManager.quickTest() // Quick comprehensive test');
-    console.log('- window.popupManager.debugCreateTestPin() // Creates a test pin');
-    console.log('- window.popupManager.loadPins() // Manually reload pins');
-    console.log('- window.popupManager.debugTestPinStorage() // Run full storage tests');
-    console.log('- window.popupManager.switchTab("pins") // Switch to pins tab');
-    console.log('\n💡 To test pins quickly, run: window.popupManager.quickTest()');
-    
-    // Run storage tests if in debug mode (check URL parameter or localStorage)
-    const urlParams = new URLSearchParams(window.location.search);
-    const isDebugMode = urlParams.get('debug') === 'true' || localStorage.getItem('debug') === 'true';
-    
-    if (isDebugMode) {
-        console.log('Debug mode enabled - running pin storage tests');
-        setTimeout(() => {
-            window.popupManager.debugTestPinStorage();
-        }, 1000);
-    }
 }); 
