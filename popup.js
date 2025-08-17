@@ -7,7 +7,9 @@ class PopupManager {
         this.initializeUI();
         this.setupEventListeners();
         // Add a small delay before checking video to ensure proper initialization
-        setTimeout(() => {
+        setTimeout(async () => {
+            // Check if encryption is enabled and session is locked
+            await this.checkEncryptionStatus();
             this.checkCurrentVideo();
             // Also check for pending pin data from content script
             this.checkPendingPinData();
@@ -185,6 +187,244 @@ class PopupManager {
         }
     }
 
+    async checkEncryptionStatus() {
+        try {
+            // Check if encryption is enabled
+            const encryptionEnabled = await new Promise((resolve) => {
+                chrome.runtime.sendMessage({ action: 'isEncryptionEnabled' }, (response) => {
+                    resolve(response?.enabled || false);
+                });
+            });
+
+            if (encryptionEnabled) {
+                // Check if session is unlocked
+                const sessionUnlocked = await new Promise((resolve) => {
+                    chrome.runtime.sendMessage({ action: 'isSessionUnlocked' }, (response) => {
+                        resolve(response?.unlocked || false);
+                    });
+                });
+
+                if (!sessionUnlocked) {
+                    // Show PIN unlock modal
+                    this.showPinUnlockModal();
+                }
+            }
+        } catch (error) {
+            console.error('Error checking encryption status:', error);
+        }
+    }
+
+    showPinUnlockModal() {
+        // Create Passkey unlock modal
+        const modal = document.createElement('div');
+        modal.id = 'pinUnlockModal';
+        modal.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.9);
+            backdrop-filter: blur(10px);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 3000;
+            font-family: 'Inter', sans-serif;
+        `;
+
+        const modalContent = document.createElement('div');
+        modalContent.style.cssText = `
+            background: rgba(26, 26, 26, 0.95);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            padding: 32px;
+            width: 90%;
+            max-width: 400px;
+            box-shadow: 0 24px 48px rgba(0, 0, 0, 0.5);
+        `;
+
+        modalContent.innerHTML = `
+            <style>
+                #pinUnlockModal h3 {
+                    color: #ffffff;
+                    font-size: 24px;
+                    font-weight: 700;
+                    margin-bottom: 16px;
+                    text-align: center;
+                }
+                #pinUnlockModal .pin-description {
+                    color: rgba(255, 255, 255, 0.7);
+                    font-size: 14px;
+                    text-align: center;
+                    margin-bottom: 24px;
+                }
+                #pinUnlockModal .pin-input-container {
+                    display: flex;
+                    justify-content: center;
+                    gap: 12px;
+                    margin-bottom: 24px;
+                }
+                #pinUnlockModal .pin-digit {
+                    width: 50px;
+                    height: 60px;
+                    background: rgba(255, 255, 255, 0.08);
+                    border: 2px solid rgba(255, 255, 255, 0.2);
+                    border-radius: 8px;
+                    color: #ffffff;
+                    font-size: 24px;
+                    font-weight: 600;
+                    text-align: center;
+                    outline: none;
+                    transition: all 0.3s ease;
+                }
+                #pinUnlockModal .pin-digit:focus {
+                    border-color: rgb(234, 102, 102);
+                    box-shadow: 0 0 0 3px rgba(234, 102, 102, 0.2);
+                    background: rgba(255, 255, 255, 0.12);
+                }
+                #pinUnlockModal .pin-digit.filled {
+                    background: rgba(234, 102, 102, 0.1);
+                    border-color: rgba(234, 102, 102, 0.3);
+                }
+                #pinUnlockModal .error-message {
+                    color: #ef4444;
+                    font-size: 14px;
+                    text-align: center;
+                    margin-bottom: 16px;
+                    min-height: 20px;
+                }
+                #pinUnlockModal .unlock-btn {
+                    width: 100%;
+                    padding: 14px 20px;
+                    background: linear-gradient(45deg, rgb(247, 168, 78) 0%, rgb(162, 92, 75) 100%);
+                    color: #ffffff;
+                    border: none;
+                    border-radius: 8px;
+                    font-size: 16px;
+                    font-weight: 600;
+                    cursor: pointer;
+                    transition: all 0.3s ease;
+                    text-transform: uppercase;
+                    letter-spacing: 0.5px;
+                }
+                #pinUnlockModal .unlock-btn:hover:not(:disabled) {
+                    transform: translateY(-2px);
+                    box-shadow: 0 6px 20px rgba(235, 163, 141, 0.3);
+                }
+                #pinUnlockModal .unlock-btn:disabled {
+                    opacity: 0.5;
+                    cursor: not-allowed;
+                }
+            </style>
+            <h3>🔒 Enter Your Passkey</h3>
+            <div class="pin-description">Enter your 4-digit passkey to unlock your API keys</div>
+            <div class="pin-input-container">
+                <input type="password" class="pin-digit" maxlength="1" pattern="[0-9]" inputmode="numeric">
+                <input type="password" class="pin-digit" maxlength="1" pattern="[0-9]" inputmode="numeric">
+                <input type="password" class="pin-digit" maxlength="1" pattern="[0-9]" inputmode="numeric">
+                <input type="password" class="pin-digit" maxlength="1" pattern="[0-9]" inputmode="numeric">
+            </div>
+            <div class="error-message"></div>
+            <button class="unlock-btn" id="unlockBtn">Unlock Session</button>
+        `;
+
+        modal.appendChild(modalContent);
+        document.body.appendChild(modal);
+
+        // Setup Passkey input handlers
+        const pinDigits = modalContent.querySelectorAll('.pin-digit');
+        const unlockBtn = modalContent.querySelector('#unlockBtn');
+        const errorMsg = modalContent.querySelector('.error-message');
+
+        pinDigits.forEach((input, index) => {
+            input.addEventListener('input', (e) => {
+                const value = e.target.value;
+                if (value && /^[0-9]$/.test(value)) {
+                    e.target.classList.add('filled');
+                    if (index < pinDigits.length - 1) {
+                        pinDigits[index + 1].focus();
+                    }
+                } else {
+                    e.target.value = '';
+                    e.target.classList.remove('filled');
+                }
+                errorMsg.textContent = '';
+            });
+
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Backspace' && !e.target.value && index > 0) {
+                    pinDigits[index - 1].focus();
+                }
+            });
+
+            input.addEventListener('paste', (e) => {
+                e.preventDefault();
+                const pastedData = e.clipboardData.getData('text');
+                if (/^\d{4}$/.test(pastedData)) {
+                    pastedData.split('').forEach((digit, i) => {
+                        if (pinDigits[i]) {
+                            pinDigits[i].value = digit;
+                            pinDigits[i].classList.add('filled');
+                        }
+                    });
+                }
+            });
+        });
+
+        const attemptUnlock = async () => {
+            const pin = Array.from(pinDigits).map(input => input.value).join('');
+            
+            if (pin.length !== 4) {
+                errorMsg.textContent = 'Please enter all 4 digits';
+                return;
+            }
+
+            unlockBtn.disabled = true;
+            unlockBtn.textContent = 'Unlocking...';
+
+            try {
+                const response = await new Promise((resolve) => {
+                    chrome.runtime.sendMessage({ action: 'unlockSession', pin: pin }, (response) => {
+                        resolve(response);
+                    });
+                });
+
+                if (response?.success) {
+                    // Remove modal and continue
+                    modal.remove();
+                } else {
+                    errorMsg.textContent = 'Invalid PIN. Please try again.';
+                    pinDigits.forEach(input => {
+                        input.value = '';
+                        input.classList.remove('filled');
+                    });
+                    pinDigits[0].focus();
+                }
+            } catch (error) {
+                errorMsg.textContent = 'Error unlocking session. Please try again.';
+            } finally {
+                unlockBtn.disabled = false;
+                unlockBtn.textContent = 'Unlock Session';
+            }
+        };
+
+        unlockBtn.addEventListener('click', attemptUnlock);
+        
+        // Allow Enter key to submit
+        pinDigits.forEach(input => {
+            input.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    attemptUnlock();
+                }
+            });
+        });
+
+        // Focus first input
+        setTimeout(() => pinDigits[0].focus(), 100);
+    }
+
     async checkCurrentVideo() {
         try {
             // Get current tab
@@ -256,10 +496,10 @@ class PopupManager {
         this.elements.createPinBtn.classList.add('hidden');
         
         try {
-            // Check if we have API keys
-            const apiKeys = await this.getApiKeys();
-            if (!apiKeys.googleAI) {
-                this.showStatus('Please configure Google AI API key in settings', 'error');
+            // Check if we have API keys using the new flexible selection
+            const activeKey = await this.getActiveApiKey();
+            if (activeKey.error) {
+                this.showStatus(activeKey.error, 'error');
                 this.isProcessing = false;
                 this.elements.searchButton.disabled = false;
                 return;
@@ -475,7 +715,7 @@ class PopupManager {
         const apiKeys = await this.getApiKeys();
         
         // Check which embedding model to use based on available API keys
-        const embeddingModel = this.getPreferredEmbeddingModel(apiKeys);
+        const embeddingModel = await this.getPreferredEmbeddingModel(apiKeys);
         
         if (!embeddingModel) {
             throw new Error('No embedding API key configured. Please configure OpenAI, Hugging Face, or Google AI API key.');
@@ -491,18 +731,112 @@ class PopupManager {
         return embeddings;
     }
 
-    getPreferredEmbeddingModel(apiKeys) {
-        // Priority order: OpenAI > Hugging Face > Google AI
+    async getPreferredEmbeddingModel(apiKeys) {
+        // Get the saved preference
+        const preference = await new Promise((resolve) => {
+            chrome.storage.local.get(['selectedProvider'], (result) => {
+                resolve(result.selectedProvider || null);
+            });
+        });
+        
+        // Check available keys
+        const availableModels = [];
+        if (apiKeys.openAI) availableModels.push({ name: 'OpenAI', type: 'openai', apiKey: apiKeys.openAI });
+        if (apiKeys.googleAI) availableModels.push({ name: 'Google AI', type: 'google', apiKey: apiKeys.googleAI });
+        if (apiKeys.huggingFace) availableModels.push({ name: 'BGE-base-en-v1.5', type: 'huggingface', apiKey: apiKeys.huggingFace });
+        
+        if (availableModels.length === 0) {
+            return null;
+        }
+        
+        // If only one model available, use it
+        if (availableModels.length === 1) {
+            return availableModels[0];
+        }
+        
+        // If preference is set and available, use it
+        if (preference) {
+            const preferredModel = availableModels.find(m => m.type === preference);
+            if (preferredModel) {
+                return preferredModel;
+            }
+        }
+        
+        // Fallback to priority order: OpenAI > Google AI > Hugging Face
         if (apiKeys.openAI) {
             return { name: 'OpenAI', type: 'openai', apiKey: apiKeys.openAI };
-        }
-        if (apiKeys.huggingFace) {
-            return { name: 'BGE-base-en-v1.5', type: 'huggingface', apiKey: apiKeys.huggingFace };
         }
         if (apiKeys.googleAI) {
             return { name: 'Google AI', type: 'google', apiKey: apiKeys.googleAI };
         }
+        if (apiKeys.huggingFace) {
+            return { name: 'BGE-base-en-v1.5', type: 'huggingface', apiKey: apiKeys.huggingFace };
+        }
         return null;
+    }
+
+    async getActiveApiKey() {
+        const apiKeys = await this.getApiKeys();
+        
+        // Get the saved preference
+        const preference = await new Promise((resolve) => {
+            chrome.storage.local.get(['selectedProvider'], (result) => {
+                resolve(result.selectedProvider || null);
+            });
+        });
+        
+        // Count available API keys
+        const availableKeys = [];
+        if (apiKeys.openAI) availableKeys.push({ provider: 'openai', key: apiKeys.openAI });
+        if (apiKeys.googleAI) availableKeys.push({ provider: 'gemini', key: apiKeys.googleAI });
+        if (apiKeys.huggingFace) availableKeys.push({ provider: 'huggingface', key: apiKeys.huggingFace });
+        
+        // No API keys configured
+        if (availableKeys.length === 0) {
+            return { error: 'Please configure an API key in settings', provider: null, key: null };
+        }
+        
+        // Only one API key configured - use it
+        if (availableKeys.length === 1) {
+            return { 
+                provider: availableKeys[0].provider, 
+                key: availableKeys[0].key,
+                error: null 
+            };
+        }
+        
+        // Multiple API keys configured - use preference or fallback
+        if (preference) {
+            // Check if the preferred provider has an API key
+            const preferredKey = availableKeys.find(k => k.provider === preference);
+            if (preferredKey) {
+                return { 
+                    provider: preferredKey.provider, 
+                    key: preferredKey.key,
+                    error: null 
+                };
+            }
+        }
+        
+        // Fallback priority order: OpenAI > Gemini > HuggingFace
+        const priorityOrder = ['openai', 'gemini', 'huggingface'];
+        for (const provider of priorityOrder) {
+            const found = availableKeys.find(k => k.provider === provider);
+            if (found) {
+                return { 
+                    provider: found.provider, 
+                    key: found.key,
+                    error: null 
+                };
+            }
+        }
+        
+        // This shouldn't happen but just in case
+        return { 
+            provider: availableKeys[0].provider, 
+            key: availableKeys[0].key,
+            error: null 
+        };
     }
 
     async generateEmbedding(chunk, embeddingModel, apiKeys) {
@@ -765,14 +1099,27 @@ class PopupManager {
     }
 
     async searchInVideo(query, transcript, embeddings) {
-        const apiKeys = await this.getApiKeys();
+        const activeKey = await this.getActiveApiKey();
         
-        if (!apiKeys.googleAI) {
-            throw new Error('Google AI API key not configured');
+        if (activeKey.error) {
+            throw new Error(activeKey.error);
         }
 
-        // Generate embedding for the query
-        const queryEmbedding = await this.generateGoogleAIEmbedding({ text: query }, apiKeys.googleAI);
+        // Generate embedding for the query using the active provider
+        let queryEmbedding;
+        switch (activeKey.provider) {
+            case 'openai':
+                queryEmbedding = await this.generateOpenAIEmbedding({ text: query }, activeKey.key);
+                break;
+            case 'gemini':
+                queryEmbedding = await this.generateGoogleAIEmbedding({ text: query }, activeKey.key);
+                break;
+            case 'huggingface':
+                queryEmbedding = await this.generateHuggingFaceEmbedding({ text: query }, activeKey.key);
+                break;
+            default:
+                throw new Error(`Unsupported provider: ${activeKey.provider}`);
+        }
 
         // Find the most similar embeddings
         const similarities = embeddings.map(item => ({
@@ -925,8 +1272,15 @@ class PopupManager {
         }
     }
 
-    showSettings() {
-        // Create settings modal with futuristic dark theme
+    async showSettings() {
+        // Check if encryption is enabled
+        const isEncryptionEnabled = await new Promise((resolve) => {
+            chrome.runtime.sendMessage({ action: 'isEncryptionEnabled' }, (response) => {
+                resolve(response?.enabled || false);
+            });
+        });
+
+        // Create settings modal with modern dark theme
         const modal = document.createElement('div');
         modal.style.cssText = `
             position: fixed;
@@ -934,83 +1288,200 @@ class PopupManager {
             left: 0;
             width: 100%;
             height: 100%;
-            background: rgba(0, 0, 0, 0.8);
-            backdrop-filter: blur(10px);
+            background: rgba(0, 0, 0, 0.85);
+            backdrop-filter: blur(20px);
             display: flex;
             justify-content: center;
             align-items: center;
             z-index: 2000;
             font-family: 'Inter', sans-serif;
+            animation: fadeIn 0.2s ease;
         `;
 
         const settingsContent = document.createElement('div');
         settingsContent.style.cssText = `
-            background: rgba(26, 26, 26, 0.95);
+            background: linear-gradient(135deg, #0f0f0f 0%, #212121 100%);
             backdrop-filter: blur(20px);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 16px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 20px;
             padding: 32px;
             width: 90%;
             max-width: 480px;
             max-height: 90vh;
             overflow-y: auto;
-            box-shadow: 0 24px 48px rgba(0, 0, 0, 0.5);
+            box-shadow: 0 24px 48px rgba(0, 0, 0, 0.6);
+            position: relative;
         `;
 
         settingsContent.innerHTML = `
             <style>
+                @keyframes fadeIn {
+                    from { opacity: 0; transform: scale(0.95); }
+                    to { opacity: 1; transform: scale(1); }
+                }
+                
+                .settings-modal {
+                    position: relative;
+                }
+                
+                .settings-modal::before {
+                    content: '';
+                    position: absolute;
+                    top: 0;
+                    left: 0;
+                    right: 0;
+                    bottom: 0;
+                    background: 
+                        radial-gradient(circle at 25% 25%, rgba(255, 0, 0, 0.05) 0%, transparent 50%),
+                        radial-gradient(circle at 75% 75%, rgba(204, 0, 0, 0.03) 0%, transparent 50%);
+                    pointer-events: none;
+                    border-radius: 20px;
+                }
+                
                 .settings-modal h3 {
                     color: #ffffff;
                     font-size: 24px;
                     font-weight: 700;
-                    margin-bottom: 24px;
+                    margin-bottom: 28px;
                     text-align: center;
-                    background: linear-gradient(45deg,rgb(234, 122, 102) 0%,rgb(66, 66, 66) 100%);
+                    background: linear-gradient(45deg, #ff0000 0%, #cc0000 100%);
                     -webkit-background-clip: text;
                     -webkit-text-fill-color: transparent;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    gap: 10px;
                 }
-                .settings-modal .api-section {
+                
+                .api-provider-selector {
+                    display: inline-flex;
+                    gap: 4px;
+                    margin: 0 auto 28px;
+                    padding: 6px;
+                    background: rgba(18, 18, 18, 0.8);
+                    border-radius: 50px;
+                    border: 1px solid rgba(255, 255, 255, 0.1);
+                    position: relative;
+                    left: 50%;
+                    transform: translateX(-50%);
+                    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3);
+                }
+                
+                .provider-btn {
+                    width: 52px;
+                    height: 52px;
+                    padding: 0;
+                    background: transparent;
+                    border: none;
+                    border-radius: 50%;
+                    cursor: pointer;
+                    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+                    position: relative;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                }
+                
+                .provider-btn:hover:not(.active) {
+                    background: rgba(255, 255, 255, 0.05);
+                }
+                
+                .provider-btn.active {
+                    background: rgba(255, 255, 255, 0.08);
+                    box-shadow: 
+                        0 2px 8px rgba(0, 0, 0, 0.2),
+                        inset 0 1px 2px rgba(255, 255, 255, 0.1);
+                }
+                
+                .provider-btn .provider-icon {
+                    font-size: 26px;
+                    filter: grayscale(100%) opacity(0.5);
+                    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+                    user-select: none;
+                }
+                
+                .provider-btn.active .provider-icon {
+                    filter: grayscale(0%) opacity(1);
+                    transform: scale(1.1);
+                }
+                
+                .provider-btn:hover .provider-icon {
+                    filter: grayscale(0%) opacity(0.9);
+                }
+                
+                .api-form-container {
+                    background: rgba(18, 18, 18, 0.6);
+                    border: 1px solid rgba(255, 255, 255, 0.08);
+                    border-radius: 16px;
+                    padding: 24px;
                     margin-bottom: 24px;
+                    transition: all 0.3s ease;
                 }
-                .settings-modal .api-label {
-                    display: block;
-                    color: rgba(255, 255, 255, 0.9);
-                    font-size: 14px;
+                
+                .api-form-header {
+                    display: flex;
+                    align-items: center;
+                    gap: 10px;
+                    margin-bottom: 16px;
+                }
+                
+                .api-provider-name {
+                    font-size: 18px;
                     font-weight: 600;
-                    margin-bottom: 8px;
+                    color: #ffffff;
                 }
+                
+                .api-provider-icon {
+                    font-size: 24px;
+                }
+                
                 .settings-modal .api-input {
                     width: 100%;
-                    padding: 12px 16px;
-                    background: rgba(255, 255, 255, 0.08);
-                    border: 1px solid rgba(255, 255, 255, 0.2);
-                    border-radius: 8px;
+                    padding: 14px 18px;
+                    background: rgba(255, 255, 255, 0.05);
+                    border: 1px solid rgba(255, 255, 255, 0.15);
+                    border-radius: 12px;
                     color: #ffffff;
                     font-size: 14px;
                     outline: none;
                     transition: all 0.3s ease;
-                    font-family: 'Inter', sans-serif;
+                    font-family: 'Courier New', monospace;
+                    letter-spacing: 0.5px;
                 }
+                
                 .settings-modal .api-input:focus {
-                    border-color:rgb(234, 102, 102);
-                    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
-                    background: rgba(255, 255, 255, 0.12);
+                    border-color: #e2e2e2;
+                    box-shadow: 0 0 0 3px rgba(141, 141, 141, 0.2);
+                    background: rgba(255, 255, 255, 0.08);
                 }
+                
                 .settings-modal .api-input::placeholder {
-                    color: rgba(255, 255, 255, 0.4);
+                    color: rgba(255, 255, 255, 0.35);
+                    font-family: 'Inter', sans-serif;
+                    letter-spacing: normal;
                 }
-                .settings-modal .api-description {
-                    color: rgba(255, 255, 255, 0.6);
-                    font-size: 12px;
-                    margin-top: 4px;
-                    line-height: 1.4;
+                
+                .api-description {
+                    color: rgba(255, 255, 255, 0.5);
+                    font-size: 13px;
+                    margin-top: 10px;
+                    line-height: 1.5;
+                    display: flex;
+                    align-items: start;
+                    gap: 6px;
+                }
+                
+                .api-description .info-icon {
+                    color: rgba(255, 255, 255, 0.3);
+                    font-size: 14px;
+                    margin-top: 1px;
                 }
                 .settings-modal .clear-cache-btn {
                     width: 100%;
-                    padding: 12px 16px;
-                    background: rgba(239, 68, 68, 0.2);
-                    border: 1px solid rgba(239, 68, 68, 0.3);
-                    border-radius: 8px;
+                    padding: 14px 18px;
+                    background: rgba(239, 68, 68, 0.15);
+                    border: 1px solid rgba(239, 68, 68, 0.25);
+                    border-radius: 12px;
                     color: #ef4444;
                     font-size: 14px;
                     font-weight: 600;
@@ -1018,20 +1489,28 @@ class PopupManager {
                     transition: all 0.3s ease;
                     margin-bottom: 24px;
                     font-family: 'Inter', sans-serif;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    gap: 8px;
                 }
+                
                 .settings-modal .clear-cache-btn:hover {
-                    background: rgba(239, 68, 68, 0.3);
+                    background: rgba(239, 68, 68, 0.25);
                     transform: translateY(-1px);
+                    box-shadow: 0 4px 12px rgba(239, 68, 68, 0.2);
                 }
+                
                 .settings-modal .button-group {
                     display: flex;
                     gap: 12px;
                 }
+                
                 .settings-modal .btn {
                     flex: 1;
                     padding: 14px 20px;
                     border: none;
-                    border-radius: 8px;
+                    border-radius: 12px;
                     font-size: 14px;
                     font-weight: 600;
                     cursor: pointer;
@@ -1040,47 +1519,192 @@ class PopupManager {
                     letter-spacing: 0.5px;
                     font-family: 'Inter', sans-serif;
                 }
+                
                 .settings-modal .btn-primary {
-                    background: linear-gradient(45deg,rgb(247, 168, 78) 0%,rgb(162, 92, 75) 100%);
+                    background: linear-gradient(45deg, #272727 0%, #3b3b3b 100%);
                     color: #ffffff;
-                    box-shadow: 0 4px 16px rgba(235, 163, 141, 0.3);
+                    box-shadow: 0 4px 16px rgba(68, 68, 68, 0.3);
                 }
+                
                 .settings-modal .btn-primary:hover {
                     transform: translateY(-2px);
-                    box-shadow: 0 6px 20px rgba(235, 163, 141, 0.3);
+                    box-shadow: 0 6px 20px rgba(68, 68, 68, 0.4);
                 }
+                
                 .settings-modal .btn-secondary {
-                    background: rgba(255, 255, 255, 0.1);
+                    background: rgba(255, 255, 255, 0.08);
                     color: rgba(255, 255, 255, 0.9);
-                    border: 1px solid rgba(255, 255, 255, 0.2);
+                    border: 1px solid rgba(255, 255, 255, 0.15);
                 }
+                
                 .settings-modal .btn-secondary:hover {
-                    background: rgba(255, 255, 255, 0.2);
+                    background: rgba(255, 255, 255, 0.12);
                     transform: translateY(-1px);
+                }
+                .settings-modal .pin-setup {
+                    background: rgba(18, 18, 18, 0.6);
+                    border: 1px solid rgba(255, 255, 255, 0.08);
+                    border-radius: 16px;
+                    padding: 20px;
+                    margin-bottom: 24px;
+                }
+                
+                .settings-modal .pin-setup-title {
+                    color: #ffffff;
+                    font-size: 16px;
+                    font-weight: 600;
+                    margin-bottom: 12px;
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                }
+                
+                .settings-modal .pin-setup-description {
+                    color: rgba(255, 255, 255, 0.6);
+                    font-size: 14px;
+                    line-height: 1.5;
+                    margin-bottom: 16px;
+                }
+                
+                .settings-modal .pin-input-group {
+                    display: flex;
+                    gap: 10px;
+                    align-items: center;
+                    justify-content: center;
+                    margin-bottom: 16px;
+                }
+                
+                .settings-modal .pin-digit-input {
+                    width: 50px;
+                    height: 50px;
+                    background: rgba(255, 255, 255, 0.05);
+                    border: 2px solid rgba(255, 255, 255, 0.15);
+                    border-radius: 10px;
+                    color: #ffffff;
+                    font-size: 20px;
+                    font-weight: 600;
+                    text-align: center;
+                    outline: none;
+                    transition: all 0.3s ease;
+                }
+                
+                .settings-modal .pin-digit-input:focus {
+                    border-color: #e2e2e2;
+                    box-shadow: 0 0 0 3px rgba(141, 141, 141, 0.2);
+                    background: rgba(255, 255, 255, 0.08);
+                }
+                
+                .settings-modal .pin-checkbox-group {
+                    display: flex;
+                    align-items: center;
+                    gap: 10px;
+                    margin-bottom: 16px;
+                }
+                
+                .settings-modal .pin-checkbox {
+                    width: 20px;
+                    height: 20px;
+                    accent-color: #666666;
+                }
+                
+                .settings-modal .pin-checkbox-label {
+                    color: rgba(255, 255, 255, 0.8);
+                    font-size: 14px;
+                }
+                
+                .settings-modal .pin-warning {
+                    background: rgba(239, 68, 68, 0.08);
+                    border: 1px solid rgba(239, 68, 68, 0.15);
+                    border-radius: 10px;
+                    padding: 12px 14px;
+                    margin-top: 12px;
+                }
+                
+                .settings-modal .pin-warning-text {
+                    color: #ef4444;
+                    font-size: 13px;
+                    line-height: 1.5;
+                    display: flex;
+                    align-items: start;
+                    gap: 6px;
                 }
             </style>
             <div class="settings-modal">
-                <h3>⚙️ API Settings</h3>
+                <h3>API Settings</h3>
                 
-                <div class="api-section">
-                    <label class="api-label">🚀 OpenAI API Key (Recommended)</label>
-                    <input type="password" id="openAiKey" class="api-input" placeholder="sk-...">
-                    <div class="api-description">Uses text-embedding-3-small model for best semantic search results</div>
+                <!-- Provider Selector -->
+                <div class="api-provider-selector">
+                    <button class="provider-btn" data-provider="openai" title="OpenAI">
+                        <span class="provider-icon">🚀</span>
+                    </button>
+                    <button class="provider-btn" data-provider="huggingface" title="Hugging Face">
+                        <span class="provider-icon">🤗</span>
+                    </button>
+                    <button class="provider-btn active" data-provider="gemini" title="Google Gemini">
+                        <span class="provider-icon">✨</span>
+                    </button>
                 </div>
                 
-                <div class="api-section">
-                    <label class="api-label">🤗 Hugging Face API Key</label>
-                    <input type="password" id="huggingFaceKey" class="api-input" placeholder="hf_...">
-                    <div class="api-description">State-of-the-art open-source BGE-base-en-v1.5 embedding model</div>
+                <!-- Unified API Form -->
+                <div class="api-form-container">
+                    <div class="api-form-header">
+                        <span class="api-provider-icon" id="providerIcon">✨</span>
+                        <span class="api-provider-name" id="providerName">Google Gemini</span>
+                    </div>
+                    <input type="password" id="unifiedApiKey" class="api-input" placeholder="Enter your API key...">
+                    <div class="api-description">
+                        <span class="info-icon">ℹ️</span>
+                        <span id="providerDescription">Don't worry, your API keys stay on your device :)</span>
+                    </div>
                 </div>
                 
-                <div class="api-section">
-                    <label class="api-label">🔍 Google AI API Key (Fallback)</label>
-                    <input type="password" id="googleAiKey" class="api-input" placeholder="AIza...">
-                    <div class="api-description">Backup option if other embedding services aren't available</div>
-                </div>
+                <!-- Hidden inputs for storing all keys -->
+                <input type="hidden" id="openAiKey">
+                <input type="hidden" id="huggingFaceKey">
+                <input type="hidden" id="googleAiKey">
                 
-                <button id="clearCache" class="clear-cache-btn">🗑️ Clear Cache & Reset</button>
+                ${!isEncryptionEnabled ? `
+                <div class="pin-setup" style="margin-top: 20px; padding: 16px;">
+                    <div class="pin-setup-title" style="font-size: 14px;">
+                        🔐 Secure Your API Keys with a Passkey
+                    </div>
+                    <div class="pin-setup-description" style="font-size: 13px;">
+                        Create a 4-digit passkey to encrypt your API keys. You'll enter this once per session.
+                    </div>
+                    <div class="pin-checkbox-group">
+                        <input type="checkbox" id="enableEncryption" class="pin-checkbox">
+                        <label for="enableEncryption" class="pin-checkbox-label">Enable passkey encryption for API keys</label>
+                    </div>
+                    <div id="pinSetupFields" style="display: none;">
+                        <div class="pin-input-group">
+                            <input type="password" class="pin-digit-input" maxlength="1" pattern="[0-9]" inputmode="numeric" id="pin1" style="width: 40px; height: 40px; font-size: 18px;">
+                            <input type="password" class="pin-digit-input" maxlength="1" pattern="[0-9]" inputmode="numeric" id="pin2" style="width: 40px; height: 40px; font-size: 18px;">
+                            <input type="password" class="pin-digit-input" maxlength="1" pattern="[0-9]" inputmode="numeric" id="pin3" style="width: 40px; height: 40px; font-size: 18px;">
+                            <input type="password" class="pin-digit-input" maxlength="1" pattern="[0-9]" inputmode="numeric" id="pin4" style="width: 40px; height: 40px; font-size: 18px;">
+                        </div>
+                        <div class="pin-warning" style="margin-top: 10px; padding: 10px 12px;">
+                            <div class="pin-warning-text" style="font-size: 12px;">
+                                <span>⚠️</span>
+                                <span>Important: Remember this passkey! If you forget it, you'll need to reset and re-enter your API keys.</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                ` : `
+                <div class="pin-setup" style="background: rgba(34, 197, 94, 0.08); border-color: rgba(34, 197, 94, 0.15); margin-top: 20px; padding: 16px;">
+                    <div class="pin-setup-title" style="color: #22c55e; font-size: 14px;">
+                        ✅ Passkey Protection Enabled
+                    </div>
+                    <div class="pin-setup-description" style="font-size: 13px;">
+                        Your API keys are encrypted with your passkey. You can reset this by clearing the cache below.
+                    </div>
+                </div>
+                `}
+                
+                <button id="clearCache" class="clear-cache-btn">
+                    <span>🗑️</span>
+                    <span>Clear Cache & Reset</span>
+                </button>
                 
                 <div class="button-group">
                     <button id="saveSettings" class="btn btn-primary">Save Settings</button>
@@ -1092,38 +1716,326 @@ class PopupManager {
         modal.appendChild(settingsContent);
         document.body.appendChild(modal);
 
-        // Load existing keys
-        this.getApiKeys().then(keys => {
+        // Provider data configuration
+        const providerConfig = {
+            openai: {
+                name: 'OpenAI',
+                icon: '🚀',
+                displayName: 'OpenAI',
+                placeholder: 'sk-...',
+                keyField: 'openAiKey'
+            },
+            huggingface: {
+                name: 'Hugging Face',
+                icon: '🤗',
+                displayName: 'Hugging Face',
+                placeholder: 'hf_...',
+                keyField: 'huggingFaceKey'
+            },
+            gemini: {
+                name: 'Google Gemini',
+                icon: '✨',
+                displayName: 'Google Gemini',
+                placeholder: 'AIza...',
+                keyField: 'googleAiKey'
+            }
+        };
+
+        let currentProvider = 'gemini';
+        const unifiedApiInput = document.getElementById('unifiedApiKey');
+        const providerButtons = document.querySelectorAll('.provider-btn');
+        const providerIcon = document.getElementById('providerIcon');
+        const providerName = document.getElementById('providerName');
+
+        // Load existing keys and store them in hidden inputs
+        this.getApiKeys().then(async keys => {
             document.getElementById('openAiKey').value = keys.openAI || '';
             document.getElementById('huggingFaceKey').value = keys.huggingFace || '';
             document.getElementById('googleAiKey').value = keys.googleAI || '';
+            
+            // Load the saved provider preference
+            const savedProvider = await new Promise((resolve) => {
+                chrome.storage.local.get(['selectedProvider'], (result) => {
+                    resolve(result.selectedProvider || 'gemini');
+                });
+            });
+            currentProvider = savedProvider;
+            
+            // Update UI to show the saved provider
+            providerButtons.forEach(btn => {
+                if (btn.dataset.provider === currentProvider) {
+                    btn.classList.add('active');
+                } else {
+                    btn.classList.remove('active');
+                }
+            });
+            
+            // Load the current provider's key into the unified input
+            const config = providerConfig[currentProvider];
+            const keyField = document.getElementById(config.keyField);
+            unifiedApiInput.value = keyField.value;
+            
+            // Update provider info display
+            providerIcon.textContent = config.icon;
+            providerName.textContent = config.displayName;
+            unifiedApiInput.placeholder = config.placeholder;
         });
+
+        // Handle provider switching
+        providerButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                // Save current provider's key to hidden input before switching
+                const currentConfig = providerConfig[currentProvider];
+                const currentKeyField = document.getElementById(currentConfig.keyField);
+                currentKeyField.value = unifiedApiInput.value;
+                
+                // Update active state
+                providerButtons.forEach(btn => btn.classList.remove('active'));
+                button.classList.add('active');
+                
+                // Switch to new provider
+                currentProvider = button.dataset.provider;
+                const config = providerConfig[currentProvider];
+                
+                // Update UI
+                providerIcon.textContent = config.icon;
+                providerName.textContent = config.displayName;
+                unifiedApiInput.placeholder = config.placeholder;
+                
+                // Load the new provider's key from hidden input
+                const keyField = document.getElementById(config.keyField);
+                unifiedApiInput.value = keyField.value;
+            });
+        });
+
+        // Setup PIN input handlers if encryption is not enabled
+        if (!isEncryptionEnabled) {
+            const enableEncryptionCheckbox = document.getElementById('enableEncryption');
+            const pinSetupFields = document.getElementById('pinSetupFields');
+            const pinInputs = []
+            
+            if (enableEncryptionCheckbox) {
+                // Get PIN inputs
+                for (let i = 1; i <= 4; i++) {
+                    const input = document.getElementById(`pin${i}`);
+                    if (input) pinInputs.push(input);
+                }
+
+                enableEncryptionCheckbox.addEventListener('change', (e) => {
+                    pinSetupFields.style.display = e.target.checked ? 'block' : 'none';
+                    if (e.target.checked && pinInputs[0]) {
+                        pinInputs[0].focus();
+                    }
+                });
+
+                // Setup PIN digit navigation
+                pinInputs.forEach((input, index) => {
+                    input.addEventListener('input', (e) => {
+                        const value = e.target.value;
+                        if (value && /^[0-9]$/.test(value)) {
+                            if (index < pinInputs.length - 1) {
+                                pinInputs[index + 1].focus();
+                            }
+                        } else {
+                            e.target.value = '';
+                        }
+                    });
+
+                    input.addEventListener('keydown', (e) => {
+                        if (e.key === 'Backspace' && !e.target.value && index > 0) {
+                            pinInputs[index - 1].focus();
+                        }
+                    });
+                });
+            }
+        }
 
         // Handle save
         document.getElementById('saveSettings').addEventListener('click', async () => {
+            // Save current provider's key to hidden input
+            const currentConfig = providerConfig[currentProvider];
+            const currentKeyField = document.getElementById(currentConfig.keyField);
+            currentKeyField.value = unifiedApiInput.value;
+            
+            // Get all keys from hidden inputs
             const openAiKey = document.getElementById('openAiKey').value;
             const huggingFaceKey = document.getElementById('huggingFaceKey').value;
             const googleAiKey = document.getElementById('googleAiKey').value;
             
+            // Save the selected provider preference
             await new Promise((resolve) => {
-                chrome.runtime.sendMessage({ 
-                    action: 'saveApiKeys', 
-                    apiKeys: { 
-                        openAI: openAiKey,
-                        huggingFace: huggingFaceKey,
-                        googleAI: googleAiKey 
-                    } 
-                }, (response) => {
-                    resolve(response);
+                chrome.storage.local.set({ selectedProvider: currentProvider }, () => {
+                    resolve();
                 });
             });
             
-            document.body.removeChild(modal);
+            let pin = null;
+            let shouldSetupPin = false;
+
+            // Check if we need to setup PIN
+            if (!isEncryptionEnabled) {
+                const enableEncryption = document.getElementById('enableEncryption')?.checked;
+                if (enableEncryption) {
+                    // Get PIN from inputs
+                    pin = '';
+                    for (let i = 1; i <= 4; i++) {
+                        const digit = document.getElementById(`pin${i}`)?.value;
+                        if (!digit || !/^[0-9]$/.test(digit)) {
+                            alert('Please enter a valid 4-digit passkey');
+                            return;
+                        }
+                        pin += digit;
+                    }
+                    shouldSetupPin = true;
+                }
+            }
+
+            try {
+                // Setup passkey if needed
+                if (shouldSetupPin && pin) {
+                    const setupResponse = await new Promise((resolve) => {
+                        chrome.runtime.sendMessage({ 
+                            action: 'setupPin', 
+                            pin: pin 
+                        }, (response) => {
+                            resolve(response);
+                        });
+                    });
+
+                    if (!setupResponse?.success) {
+                        alert('Failed to setup passkey. Please try again.');
+                        return;
+                    }
+
+                    // Unlock session with the new PIN
+                    await new Promise((resolve) => {
+                        chrome.runtime.sendMessage({ 
+                            action: 'unlockSession', 
+                            pin: pin 
+                        }, (response) => {
+                            resolve(response);
+                        });
+                    });
+
+                    // Check for existing unencrypted API keys to migrate
+                    const existingKeys = await new Promise((resolve) => {
+                        chrome.storage.local.get(['apiKeys'], (result) => {
+                            resolve(result.apiKeys || {});
+                        });
+                    });
+
+                    // Merge existing keys with new ones
+                    if (existingKeys && Object.keys(existingKeys).length > 0) {
+                        // Preserve existing keys if new ones are empty
+                        if (!openAiKey && existingKeys.openAI) {
+                            document.getElementById('openAiKey').value = existingKeys.openAI;
+                        }
+                        if (!huggingFaceKey && existingKeys.huggingFace) {
+                            document.getElementById('huggingFaceKey').value = existingKeys.huggingFace;
+                        }
+                        if (!googleAiKey && existingKeys.googleAI) {
+                            document.getElementById('googleAiKey').value = existingKeys.googleAI;
+                        }
+                    }
+                }
+
+                // Save API keys (with PIN if encryption is enabled)
+                await new Promise((resolve) => {
+                    chrome.runtime.sendMessage({ 
+                        action: 'saveApiKeys', 
+                        apiKeys: { 
+                            openAI: openAiKey,
+                            huggingFace: huggingFaceKey,
+                            googleAI: googleAiKey 
+                        },
+                        pin: pin // Pass PIN if we just set it up
+                    }, (response) => {
+                        resolve(response);
+                    });
+                });
+                
+                if (shouldSetupPin) {
+                    // Show success message for passkey setup
+                    const successModal = document.createElement('div');
+                    successModal.style.cssText = `
+                        position: fixed;
+                        top: 50%;
+                        left: 50%;
+                        transform: translate(-50%, -50%);
+                        background: rgba(34, 197, 94, 0.2);
+                        border: 1px solid rgba(34, 197, 94, 0.3);
+                        border-radius: 8px;
+                        padding: 20px 32px;
+                        color: #22c55e;
+                        font-size: 16px;
+                        font-weight: 600;
+                        z-index: 2001;
+                        backdrop-filter: blur(10px);
+                    `;
+                    successModal.innerHTML = '🔐 Passkey protection enabled successfully!';
+                    document.body.appendChild(successModal);
+                    
+                    setTimeout(() => {
+                        if (document.body.contains(successModal)) {
+                            document.body.removeChild(successModal);
+                        }
+                    }, 3000);
+                }
+                
+                document.body.removeChild(modal);
+            } catch (error) {
+                alert('Error saving settings: ' + error.message);
+            }
         });
 
         // Handle clear cache
         document.getElementById('clearCache').addEventListener('click', async () => {
+            // Check if encryption is enabled and offer to reset it
+            const encryptionEnabled = await new Promise((resolve) => {
+                chrome.runtime.sendMessage({ action: 'isEncryptionEnabled' }, (response) => {
+                    resolve(response?.enabled || false);
+                });
+            });
+
+            let confirmMessage = 'This will clear all cached transcripts and embeddings.';
+            if (encryptionEnabled) {
+                confirmMessage += ' It will also reset PIN protection and you\'ll need to re-enter your API keys.';
+            }
+            confirmMessage += ' Continue?';
+
+            if (!confirm(confirmMessage)) {
+                return;
+            }
+
             await this.clearCache();
+            
+            // Reset encryption if enabled
+            if (encryptionEnabled) {
+                await new Promise((resolve) => {
+                    chrome.runtime.sendMessage({ action: 'resetEncryption' }, (response) => {
+                        resolve(response);
+                    });
+                });
+            }
+
+            // Clear the API key fields immediately after resetting encryption
+            if (encryptionEnabled) {
+                // Clear the visible unified API key input
+                const unifiedApiInput = document.getElementById('unifiedApiKey');
+                if (unifiedApiInput) {
+                    unifiedApiInput.value = '';
+                }
+                
+                // Clear all hidden API key inputs
+                const openAiKeyInput = document.getElementById('openAiKey');
+                const huggingFaceKeyInput = document.getElementById('huggingFaceKey');
+                const googleAiKeyInput = document.getElementById('googleAiKey');
+                
+                if (openAiKeyInput) openAiKeyInput.value = '';
+                if (huggingFaceKeyInput) huggingFaceKeyInput.value = '';
+                if (googleAiKeyInput) googleAiKeyInput.value = '';
+            }
+
             // Create a custom styled alert
             const alertModal = document.createElement('div');
             alertModal.style.cssText = `
@@ -1141,12 +2053,18 @@ class PopupManager {
                 z-index: 2001;
                 backdrop-filter: blur(10px);
             `;
-            alertModal.textContent = '✅ Cache cleared successfully!';
+            alertModal.textContent = encryptionEnabled ? 
+                '✅ Cache cleared and PIN reset successfully!' : 
+                '✅ Cache cleared successfully!';
             document.body.appendChild(alertModal);
             
             setTimeout(() => {
                 if (document.body.contains(alertModal)) {
                     document.body.removeChild(alertModal);
+                }
+                // Reload the page if encryption was reset
+                if (encryptionEnabled) {
+                    window.location.reload();
                 }
             }, 2000);
         });

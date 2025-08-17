@@ -1,7 +1,11 @@
+// Import encryption manager
+importScripts('encryption.js');
+
 // Background script for YouTube Video Search extension
 class BackgroundService {
     constructor() {
         this.currentVideoInfo = null;
+        this.encryptionManager = new EncryptionManager();
         this.setupMessageHandlers();
         this.setupStorageKeys();
     }
@@ -16,7 +20,7 @@ class BackgroundService {
                     sendResponse(this.currentVideoInfo);
                     break;
                 case 'saveApiKeys':
-                    this.saveApiKeys(request.apiKeys).then(() => {
+                    this.saveApiKeys(request.apiKeys, request.pin).then(() => {
                         sendResponse({ success: true });
                     }).catch(error => {
                         sendResponse({ success: false, error: error.message });
@@ -27,6 +31,48 @@ class BackgroundService {
                         sendResponse(apiKeys);
                     }).catch(error => {
                         sendResponse({ error: error.message });
+                    });
+                    return true;
+                case 'setupPin':
+                    this.encryptionManager.setupPin(request.pin).then(() => {
+                        sendResponse({ success: true });
+                    }).catch(error => {
+                        sendResponse({ success: false, error: error.message });
+                    });
+                    return true;
+                case 'verifyPin':
+                    this.encryptionManager.verifyPin(request.pin).then(isValid => {
+                        sendResponse({ success: isValid });
+                    }).catch(error => {
+                        sendResponse({ success: false, error: error.message });
+                    });
+                    return true;
+                case 'unlockSession':
+                    this.encryptionManager.unlockSession(request.pin).then(() => {
+                        sendResponse({ success: true });
+                    }).catch(error => {
+                        sendResponse({ success: false, error: error.message });
+                    });
+                    return true;
+                case 'isSessionUnlocked':
+                    this.encryptionManager.isSessionUnlocked().then(unlocked => {
+                        sendResponse({ unlocked: unlocked });
+                    }).catch(error => {
+                        sendResponse({ unlocked: false, error: error.message });
+                    });
+                    return true;
+                case 'isEncryptionEnabled':
+                    this.encryptionManager.isEncryptionEnabled().then(enabled => {
+                        sendResponse({ enabled: enabled });
+                    }).catch(error => {
+                        sendResponse({ enabled: false, error: error.message });
+                    });
+                    return true;
+                case 'resetEncryption':
+                    this.encryptionManager.resetEncryption().then(() => {
+                        sendResponse({ success: true });
+                    }).catch(error => {
+                        sendResponse({ success: false, error: error.message });
                     });
                     return true;
                 case 'saveTranscript':
@@ -135,98 +181,115 @@ class BackgroundService {
         });
     }
 
-    async saveApiKeys(apiKeys) {
-        return new Promise((resolve, reject) => {
-            chrome.storage.local.set({ apiKeys: apiKeys }, () => {
-                if (chrome.runtime.lastError) {
-                    reject(chrome.runtime.lastError);
-                } else {
-                    resolve();
+    async saveApiKeys(apiKeys, pin = null) {
+        try {
+            const isEncryptionEnabled = await this.encryptionManager.isEncryptionEnabled();
+            
+            if (isEncryptionEnabled) {
+                // If encryption is enabled, encrypt the API keys
+                let pinToUse = pin;
+                
+                // If no passkey provided, try to get it from session
+                if (!pinToUse) {
+                    pinToUse = await this.encryptionManager.getSessionPin();
                 }
-            });
-        });
+                
+                if (!pinToUse) {
+                    throw new Error('Passkey required to save API keys');
+                }
+                
+                const encryptedKeys = await this.encryptionManager.encrypt(apiKeys, pinToUse);
+                
+                return this.setStorageData({ 
+                    encryptedApiKeys: encryptedKeys,
+                    apiKeys: {} // Clear any unencrypted keys
+                });
+            } else {
+                // Backward compatibility: save unencrypted
+                return this.setStorageData({ apiKeys: apiKeys });
+            }
+        } catch (error) {
+            throw error;
+        }
     }
 
     async getApiKeys() {
-        return new Promise((resolve, reject) => {
-            chrome.storage.local.get(['apiKeys'], (result) => {
-                if (chrome.runtime.lastError) {
-                    reject(chrome.runtime.lastError);
-                } else {
-                    resolve(result.apiKeys || {});
+        try {
+            const isEncryptionEnabled = await this.encryptionManager.isEncryptionEnabled();
+            
+            if (isEncryptionEnabled) {
+                // Check if session is unlocked
+                const isUnlocked = await this.encryptionManager.isSessionUnlocked();
+                
+                if (!isUnlocked) {
+                    throw new Error('Session locked. Please enter your passkey.');
                 }
-            });
-        });
+                
+                // Get encrypted keys
+                const result = await this.getStorageData(['encryptedApiKeys']);
+                const encryptedKeys = result.encryptedApiKeys || null;
+                
+                if (!encryptedKeys) {
+                    return {};
+                }
+                
+                // Get session passkey
+                const sessionPin = await this.encryptionManager.getSessionPin();
+                
+                if (!sessionPin) {
+                    throw new Error('Session passkey not found. Please unlock session.');
+                }
+                
+                // Decrypt and return
+                return await this.encryptionManager.decrypt(encryptedKeys, sessionPin);
+            } else {
+                // Return unencrypted keys for backward compatibility
+                const result = await this.getStorageData(['apiKeys']);
+                return result.apiKeys || {};
+            }
+        } catch (error) {
+            throw error;
+        }
     }
 
     async saveTranscript(videoId, transcript) {
-        return new Promise((resolve, reject) => {
-            chrome.storage.local.get(['transcripts'], (result) => {
-                const transcripts = result.transcripts || {};
-                transcripts[videoId] = {
-                    transcript: transcript,
-                    timestamp: Date.now()
-                };
-                
-                chrome.storage.local.set({ transcripts: transcripts }, () => {
-                    if (chrome.runtime.lastError) {
-                        reject(chrome.runtime.lastError);
-                    } else {
-                        resolve();
-                    }
-                });
-            });
-        });
+        const result = await this.getStorageData(['transcripts']);
+        const transcripts = result.transcripts || {};
+        transcripts[videoId] = {
+            transcript: transcript,
+            timestamp: Date.now()
+        };
+        return this.setStorageData({ transcripts: transcripts });
     }
 
     async getTranscript(videoId) {
-        return new Promise((resolve, reject) => {
-            chrome.storage.local.get(['transcripts'], (result) => {
-                if (chrome.runtime.lastError) {
-                    reject(chrome.runtime.lastError);
-                } else {
-                    const transcripts = result.transcripts || {};
-                    const transcriptData = transcripts[videoId];
-                    resolve(transcriptData || null);
-                }
-            });
-        });
+        const result = await this.getStorageData(['transcripts']);
+        const transcripts = result.transcripts || {};
+        return transcripts[videoId] || null;
     }
 
     async saveEmbeddings(videoId, embeddings) {
-        return new Promise((resolve, reject) => {
-            chrome.storage.local.get(['embeddings'], (result) => {
-                const allEmbeddings = result.embeddings || {};
-                allEmbeddings[videoId] = {
-                    embeddings: embeddings,
-                    timestamp: Date.now()
-                };
-                
-                chrome.storage.local.set({ embeddings: allEmbeddings }, () => {
-                    if (chrome.runtime.lastError) {
-                        reject(chrome.runtime.lastError);
-                    } else {
-                        resolve();
-                    }
-                });
-            });
-        });
+        const result = await this.getStorageData(['embeddings']);
+        const allEmbeddings = result.embeddings || {};
+        allEmbeddings[videoId] = {
+            embeddings: embeddings,
+            timestamp: Date.now()
+        };
+        return this.setStorageData({ embeddings: allEmbeddings });
     }
 
     async getEmbeddings(videoId) {
-        return new Promise((resolve, reject) => {
-            chrome.storage.local.get(['embeddings'], (result) => {
-                if (chrome.runtime.lastError) {
-                    reject(chrome.runtime.lastError);
-                } else {
-                    const allEmbeddings = result.embeddings || {};
-                    const embeddingData = allEmbeddings[videoId];
-                    resolve(embeddingData || null);
-                }
-            });
-        });
+        const result = await this.getStorageData(['embeddings']);
+        const allEmbeddings = result.embeddings || {};
+        return allEmbeddings[videoId] || null;
     }
 
+    /**
+     * Transcribes audio using Deepgram API (Future feature - not currently implemented)
+     * @param {string} audioStreamUrl - URL of the audio stream
+     * @param {string} videoId - YouTube video ID
+     * @returns {Promise<Object>} Transcription result
+     */
     async transcribeWithDeepgram(audioStreamUrl, videoId) {
         try {
             // Get the Deepgram API key
@@ -426,141 +489,61 @@ class BackgroundService {
             return {
                 segmentDuration: 5,    // 5 seconds
                 maxWords: 8,           // 8 words max (increased slightly from 6)
-                description: 'short'
             };
         } else if (durationInMinutes < 30) {
             return {
                 segmentDuration: 8,    // 8 seconds
                 maxWords: 12,          // 12 words max
-                description: 'medium'
             };
         } else if (durationInMinutes < 60) {
             return {
                 segmentDuration: 12,   // 12 seconds
                 maxWords: 18,          // 18 words max
-                description: 'long'
             };
         } else {
             return {
                 segmentDuration: 15,   // 15 seconds
                 maxWords: 25,          // 25 words max
-                description: 'very_long'
             };
         }
     }
 
-    // Clean up old data (optional - can be called periodically)
-    async cleanupOldData() {
-        const maxAge = 7 * 24 * 60 * 60 * 1000; // 7 days
-        const now = Date.now();
-
-        chrome.storage.local.get(['transcripts', 'embeddings'], (result) => {
-            const transcripts = result.transcripts || {};
-            const embeddings = result.embeddings || {};
-
-            // Clean old transcripts
-            Object.keys(transcripts).forEach(videoId => {
-                if (now - transcripts[videoId].timestamp > maxAge) {
-                    delete transcripts[videoId];
-                }
-            });
-
-            // Clean old embeddings
-            Object.keys(embeddings).forEach(videoId => {
-                if (now - embeddings[videoId].timestamp > maxAge) {
-                    delete embeddings[videoId];
-                }
-            });
-
-            // Save cleaned data
-            chrome.storage.local.set({ transcripts, embeddings });
-        });
-    }
 
     // Pin management methods
     async savePin(pin) {
-        return new Promise((resolve, reject) => {
-            chrome.storage.local.get(['pins'], (result) => {
-                if (chrome.runtime.lastError) {
-                    reject(chrome.runtime.lastError);
-                    return;
-                }
+        const result = await this.getStorageData(['pins']);
+        const pins = result.pins || [];
+        
+        // Generate unique ID for the pin
+        const pinId = Date.now().toString() + Math.random().toString(36).substr(2, 9);
+        const newPin = {
+            id: pinId,
+            ...pin,
+            createdAt: Date.now()
+        };
 
-                const pins = result.pins || [];
-                
-                // Generate unique ID for the pin
-                const pinId = Date.now().toString() + Math.random().toString(36).substr(2, 9);
-                const newPin = {
-                    id: pinId,
-                    ...pin,
-                    createdAt: Date.now()
-                };
-
-                pins.push(newPin);
-
-                chrome.storage.local.set({ pins: pins }, () => {
-                    if (chrome.runtime.lastError) {
-                        reject(chrome.runtime.lastError);
-                    } else {
-                        resolve();
-                    }
-                });
-            });
-        });
+        pins.push(newPin);
+        return this.setStorageData({ pins: pins });
     }
 
     async getPins(videoId) {
-        return new Promise((resolve, reject) => {
-            chrome.storage.local.get(['pins'], (result) => {
-                if (chrome.runtime.lastError) {
-                    reject(chrome.runtime.lastError);
-                    return;
-                }
-
-                const pins = result.pins || [];
-                const videoPins = pins.filter(pin => pin.videoId === videoId);
-                resolve(videoPins);
-            });
-        });
+        const result = await this.getStorageData(['pins']);
+        const pins = result.pins || [];
+        return pins.filter(pin => pin.videoId === videoId);
     }
 
     async getAllPins() {
-        return new Promise((resolve, reject) => {
-            chrome.storage.local.get(['pins'], (result) => {
-                if (chrome.runtime.lastError) {
-                    reject(chrome.runtime.lastError);
-                    return;
-                }
-
-                const pins = result.pins || [];
-                
-                // Sort by creation date, newest first
-                pins.sort((a, b) => b.createdAt - a.createdAt);
-                resolve(pins);
-            });
-        });
+        const result = await this.getStorageData(['pins']);
+        const pins = result.pins || [];
+        // Sort by creation date, newest first
+        return pins.sort((a, b) => b.createdAt - a.createdAt);
     }
 
     async deletePin(pinId) {
-        return new Promise((resolve, reject) => {
-            chrome.storage.local.get(['pins'], (result) => {
-                if (chrome.runtime.lastError) {
-                    reject(chrome.runtime.lastError);
-                    return;
-                }
-
-                const pins = result.pins || [];
-                const updatedPins = pins.filter(pin => pin.id !== pinId);
-
-                chrome.storage.local.set({ pins: updatedPins }, () => {
-                    if (chrome.runtime.lastError) {
-                        reject(chrome.runtime.lastError);
-                    } else {
-                        resolve();
-                    }
-                });
-            });
-        });
+        const result = await this.getStorageData(['pins']);
+        const pins = result.pins || [];
+        const updatedPins = pins.filter(pin => pin.id !== pinId);
+        return this.setStorageData({ pins: updatedPins });
     }
 
     // Handle opening pin form from content script
@@ -571,19 +554,11 @@ class BackgroundService {
             // Since we can't directly check if popup is open, we'll use a different approach
             
             // Store the pin data temporarily for when popup opens
-            await new Promise((resolve, reject) => {
-                chrome.storage.local.set({ 
-                    pendingPinData: {
-                        ...pinData,
-                        timestamp: Date.now()
-                    }
-                }, () => {
-                    if (chrome.runtime.lastError) {
-                        reject(chrome.runtime.lastError);
-                    } else {
-                        resolve();
-                    }
-                });
+            await this.setStorageData({ 
+                pendingPinData: {
+                    ...pinData,
+                    timestamp: Date.now()
+                }
             });
 
             // Try to open the extension popup programmatically
@@ -624,10 +599,31 @@ class BackgroundService {
             throw error;
         }
     }
+    // Storage utility methods
+    async getStorageData(keys) {
+        return new Promise((resolve, reject) => {
+            chrome.storage.local.get(keys, (result) => {
+                if (chrome.runtime.lastError) {
+                    reject(chrome.runtime.lastError);
+                } else {
+                    resolve(result);
+                }
+            });
+        });
+    }
+
+    async setStorageData(data) {
+        return new Promise((resolve, reject) => {
+            chrome.storage.local.set(data, () => {
+                if (chrome.runtime.lastError) {
+                    reject(chrome.runtime.lastError);
+                } else {
+                    resolve();
+                }
+            });
+        });
+    }
 }
 
 // Initialize the background service
 const backgroundService = new BackgroundService();
-
-// Run cleanup on startup
-backgroundService.cleanupOldData(); 
