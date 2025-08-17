@@ -16,13 +16,14 @@
    - Download the latest release
    - Open Chrome/Edge and go to `chrome://extensions/`
    - Enable "Developer mode"
-   - Click "Load unpacked" and select the extension directory
+   - Drag and drop the .crx file onto the extensions page
 2. **Configure API Keys**
    - Click the extension icon and open settings (⚙️)
    - Add your API keys:
      - Google AI API Key (Free) - Get it [here](https://aistudio.google.com/apikey)
      - OpenAI API Key (Recommended) - Get it [here](https://platform.openai.com/api-keys)
      - Hugging Face Access Token - Get it [here](https://huggingface.co/settings/tokens)
+   - Note: It is _highly_ recommended to setup the 4-digit passkey in order to secure your API keys.
 3. **Start Searching**
    - Navigate to any YouTube video
    - Click the extension icon
