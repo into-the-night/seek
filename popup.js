@@ -1654,7 +1654,7 @@ class PopupManager {
                     <input type="password" id="unifiedApiKey" class="api-input" placeholder="Enter your API key...">
                     <div class="api-description">
                         <span class="info-icon">ℹ️</span>
-                        <span id="providerDescription">Google's advanced AI model for high-quality embeddings and semantic search</span>
+                        <span id="providerDescription">Don't worry, your API keys stay on your device :)</span>
                     </div>
                 </div>
                 
@@ -1723,7 +1723,6 @@ class PopupManager {
                 icon: '🚀',
                 displayName: 'OpenAI',
                 placeholder: 'sk-...',
-                description: 'Uses text-embedding-3-small model for best semantic search results',
                 keyField: 'openAiKey'
             },
             huggingface: {
@@ -1731,7 +1730,6 @@ class PopupManager {
                 icon: '🤗',
                 displayName: 'Hugging Face',
                 placeholder: 'hf_...',
-                description: 'State-of-the-art open-source BGE-base-en-v1.5 embedding model',
                 keyField: 'huggingFaceKey'
             },
             gemini: {
@@ -1739,7 +1737,6 @@ class PopupManager {
                 icon: '✨',
                 displayName: 'Google Gemini',
                 placeholder: 'AIza...',
-                description: 'Google\'s advanced AI model for high-quality embeddings and semantic search',
                 keyField: 'googleAiKey'
             }
         };
@@ -1749,7 +1746,6 @@ class PopupManager {
         const providerButtons = document.querySelectorAll('.provider-btn');
         const providerIcon = document.getElementById('providerIcon');
         const providerName = document.getElementById('providerName');
-        const providerDescription = document.getElementById('providerDescription');
 
         // Load existing keys and store them in hidden inputs
         this.getApiKeys().then(async keys => {
@@ -1782,7 +1778,6 @@ class PopupManager {
             // Update provider info display
             providerIcon.textContent = config.icon;
             providerName.textContent = config.displayName;
-            providerDescription.textContent = config.description;
             unifiedApiInput.placeholder = config.placeholder;
         });
 
@@ -1805,7 +1800,6 @@ class PopupManager {
                 // Update UI
                 providerIcon.textContent = config.icon;
                 providerName.textContent = config.displayName;
-                providerDescription.textContent = config.description;
                 unifiedApiInput.placeholder = config.placeholder;
                 
                 // Load the new provider's key from hidden input

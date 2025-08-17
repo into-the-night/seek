@@ -200,29 +200,13 @@ class BackgroundService {
                 
                 const encryptedKeys = await this.encryptionManager.encrypt(apiKeys, pinToUse);
                 
-                return new Promise((resolve, reject) => {
-                    chrome.storage.local.set({ 
-                        encryptedApiKeys: encryptedKeys,
-                        apiKeys: {} // Clear any unencrypted keys
-                    }, () => {
-                        if (chrome.runtime.lastError) {
-                            reject(chrome.runtime.lastError);
-                        } else {
-                            resolve();
-                        }
-                    });
+                return this.setStorageData({ 
+                    encryptedApiKeys: encryptedKeys,
+                    apiKeys: {} // Clear any unencrypted keys
                 });
             } else {
-                // If encryption is not enabled, save as before (for backward compatibility)
-                return new Promise((resolve, reject) => {
-                    chrome.storage.local.set({ apiKeys: apiKeys }, () => {
-                        if (chrome.runtime.lastError) {
-                            reject(chrome.runtime.lastError);
-                        } else {
-                            resolve();
-                        }
-                    });
-                });
+                // Backward compatibility: save unencrypted
+                return this.setStorageData({ apiKeys: apiKeys });
             }
         } catch (error) {
             throw error;
@@ -242,11 +226,8 @@ class BackgroundService {
                 }
                 
                 // Get encrypted keys
-                const encryptedKeys = await new Promise((resolve) => {
-                    chrome.storage.local.get(['encryptedApiKeys'], (result) => {
-                        resolve(result.encryptedApiKeys || null);
-                    });
-                });
+                const result = await this.getStorageData(['encryptedApiKeys']);
+                const encryptedKeys = result.encryptedApiKeys || null;
                 
                 if (!encryptedKeys) {
                     return {};
@@ -260,19 +241,11 @@ class BackgroundService {
                 }
                 
                 // Decrypt and return
-                const decryptedKeys = await this.encryptionManager.decrypt(encryptedKeys, sessionPin);
-                return decryptedKeys;
+                return await this.encryptionManager.decrypt(encryptedKeys, sessionPin);
             } else {
-                // If encryption is not enabled, return unencrypted keys
-                return new Promise((resolve, reject) => {
-                    chrome.storage.local.get(['apiKeys'], (result) => {
-                        if (chrome.runtime.lastError) {
-                            reject(chrome.runtime.lastError);
-                        } else {
-                            resolve(result.apiKeys || {});
-                        }
-                    });
-                });
+                // Return unencrypted keys for backward compatibility
+                const result = await this.getStorageData(['apiKeys']);
+                return result.apiKeys || {};
             }
         } catch (error) {
             throw error;
@@ -280,74 +253,43 @@ class BackgroundService {
     }
 
     async saveTranscript(videoId, transcript) {
-        return new Promise((resolve, reject) => {
-            chrome.storage.local.get(['transcripts'], (result) => {
-                const transcripts = result.transcripts || {};
-                transcripts[videoId] = {
-                    transcript: transcript,
-                    timestamp: Date.now()
-                };
-                
-                chrome.storage.local.set({ transcripts: transcripts }, () => {
-                    if (chrome.runtime.lastError) {
-                        reject(chrome.runtime.lastError);
-                    } else {
-                        resolve();
-                    }
-                });
-            });
-        });
+        const result = await this.getStorageData(['transcripts']);
+        const transcripts = result.transcripts || {};
+        transcripts[videoId] = {
+            transcript: transcript,
+            timestamp: Date.now()
+        };
+        return this.setStorageData({ transcripts: transcripts });
     }
 
     async getTranscript(videoId) {
-        return new Promise((resolve, reject) => {
-            chrome.storage.local.get(['transcripts'], (result) => {
-                if (chrome.runtime.lastError) {
-                    reject(chrome.runtime.lastError);
-                } else {
-                    const transcripts = result.transcripts || {};
-                    const transcriptData = transcripts[videoId];
-                    resolve(transcriptData || null);
-                }
-            });
-        });
+        const result = await this.getStorageData(['transcripts']);
+        const transcripts = result.transcripts || {};
+        return transcripts[videoId] || null;
     }
 
     async saveEmbeddings(videoId, embeddings) {
-        return new Promise((resolve, reject) => {
-            chrome.storage.local.get(['embeddings'], (result) => {
-                const allEmbeddings = result.embeddings || {};
-                allEmbeddings[videoId] = {
-                    embeddings: embeddings,
-                    timestamp: Date.now()
-                };
-                
-                chrome.storage.local.set({ embeddings: allEmbeddings }, () => {
-                    if (chrome.runtime.lastError) {
-                        reject(chrome.runtime.lastError);
-                    } else {
-                        resolve();
-                    }
-                });
-            });
-        });
+        const result = await this.getStorageData(['embeddings']);
+        const allEmbeddings = result.embeddings || {};
+        allEmbeddings[videoId] = {
+            embeddings: embeddings,
+            timestamp: Date.now()
+        };
+        return this.setStorageData({ embeddings: allEmbeddings });
     }
 
     async getEmbeddings(videoId) {
-        return new Promise((resolve, reject) => {
-            chrome.storage.local.get(['embeddings'], (result) => {
-                if (chrome.runtime.lastError) {
-                    reject(chrome.runtime.lastError);
-                } else {
-                    const allEmbeddings = result.embeddings || {};
-                    const embeddingData = allEmbeddings[videoId];
-                    resolve(embeddingData || null);
-                }
-            });
-        });
+        const result = await this.getStorageData(['embeddings']);
+        const allEmbeddings = result.embeddings || {};
+        return allEmbeddings[videoId] || null;
     }
 
-    // Not using this yet maybe in the future
+    /**
+     * Transcribes audio using Deepgram API (Future feature - not currently implemented)
+     * @param {string} audioStreamUrl - URL of the audio stream
+     * @param {string} videoId - YouTube video ID
+     * @returns {Promise<Object>} Transcription result
+     */
     async transcribeWithDeepgram(audioStreamUrl, videoId) {
         try {
             // Get the Deepgram API key
@@ -569,88 +511,39 @@ class BackgroundService {
 
     // Pin management methods
     async savePin(pin) {
-        return new Promise((resolve, reject) => {
-            chrome.storage.local.get(['pins'], (result) => {
-                if (chrome.runtime.lastError) {
-                    reject(chrome.runtime.lastError);
-                    return;
-                }
+        const result = await this.getStorageData(['pins']);
+        const pins = result.pins || [];
+        
+        // Generate unique ID for the pin
+        const pinId = Date.now().toString() + Math.random().toString(36).substr(2, 9);
+        const newPin = {
+            id: pinId,
+            ...pin,
+            createdAt: Date.now()
+        };
 
-                const pins = result.pins || [];
-                
-                // Generate unique ID for the pin
-                const pinId = Date.now().toString() + Math.random().toString(36).substr(2, 9);
-                const newPin = {
-                    id: pinId,
-                    ...pin,
-                    createdAt: Date.now()
-                };
-
-                pins.push(newPin);
-
-                chrome.storage.local.set({ pins: pins }, () => {
-                    if (chrome.runtime.lastError) {
-                        reject(chrome.runtime.lastError);
-                    } else {
-                        resolve();
-                    }
-                });
-            });
-        });
+        pins.push(newPin);
+        return this.setStorageData({ pins: pins });
     }
 
     async getPins(videoId) {
-        return new Promise((resolve, reject) => {
-            chrome.storage.local.get(['pins'], (result) => {
-                if (chrome.runtime.lastError) {
-                    reject(chrome.runtime.lastError);
-                    return;
-                }
-
-                const pins = result.pins || [];
-                const videoPins = pins.filter(pin => pin.videoId === videoId);
-                resolve(videoPins);
-            });
-        });
+        const result = await this.getStorageData(['pins']);
+        const pins = result.pins || [];
+        return pins.filter(pin => pin.videoId === videoId);
     }
 
     async getAllPins() {
-        return new Promise((resolve, reject) => {
-            chrome.storage.local.get(['pins'], (result) => {
-                if (chrome.runtime.lastError) {
-                    reject(chrome.runtime.lastError);
-                    return;
-                }
-
-                const pins = result.pins || [];
-                
-                // Sort by creation date, newest first
-                pins.sort((a, b) => b.createdAt - a.createdAt);
-                resolve(pins);
-            });
-        });
+        const result = await this.getStorageData(['pins']);
+        const pins = result.pins || [];
+        // Sort by creation date, newest first
+        return pins.sort((a, b) => b.createdAt - a.createdAt);
     }
 
     async deletePin(pinId) {
-        return new Promise((resolve, reject) => {
-            chrome.storage.local.get(['pins'], (result) => {
-                if (chrome.runtime.lastError) {
-                    reject(chrome.runtime.lastError);
-                    return;
-                }
-
-                const pins = result.pins || [];
-                const updatedPins = pins.filter(pin => pin.id !== pinId);
-
-                chrome.storage.local.set({ pins: updatedPins }, () => {
-                    if (chrome.runtime.lastError) {
-                        reject(chrome.runtime.lastError);
-                    } else {
-                        resolve();
-                    }
-                });
-            });
-        });
+        const result = await this.getStorageData(['pins']);
+        const pins = result.pins || [];
+        const updatedPins = pins.filter(pin => pin.id !== pinId);
+        return this.setStorageData({ pins: updatedPins });
     }
 
     // Handle opening pin form from content script
@@ -661,19 +554,11 @@ class BackgroundService {
             // Since we can't directly check if popup is open, we'll use a different approach
             
             // Store the pin data temporarily for when popup opens
-            await new Promise((resolve, reject) => {
-                chrome.storage.local.set({ 
-                    pendingPinData: {
-                        ...pinData,
-                        timestamp: Date.now()
-                    }
-                }, () => {
-                    if (chrome.runtime.lastError) {
-                        reject(chrome.runtime.lastError);
-                    } else {
-                        resolve();
-                    }
-                });
+            await this.setStorageData({ 
+                pendingPinData: {
+                    ...pinData,
+                    timestamp: Date.now()
+                }
             });
 
             // Try to open the extension popup programmatically
@@ -713,6 +598,30 @@ class BackgroundService {
         } catch (error) {
             throw error;
         }
+    }
+    // Storage utility methods
+    async getStorageData(keys) {
+        return new Promise((resolve, reject) => {
+            chrome.storage.local.get(keys, (result) => {
+                if (chrome.runtime.lastError) {
+                    reject(chrome.runtime.lastError);
+                } else {
+                    resolve(result);
+                }
+            });
+        });
+    }
+
+    async setStorageData(data) {
+        return new Promise((resolve, reject) => {
+            chrome.storage.local.set(data, () => {
+                if (chrome.runtime.lastError) {
+                    reject(chrome.runtime.lastError);
+                } else {
+                    resolve();
+                }
+            });
+        });
     }
 }
 
