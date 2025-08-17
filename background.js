@@ -1,7 +1,11 @@
+// Import encryption manager
+importScripts('encryption.js');
+
 // Background script for YouTube Video Search extension
 class BackgroundService {
     constructor() {
         this.currentVideoInfo = null;
+        this.encryptionManager = new EncryptionManager();
         this.setupMessageHandlers();
         this.setupStorageKeys();
     }
@@ -16,7 +20,7 @@ class BackgroundService {
                     sendResponse(this.currentVideoInfo);
                     break;
                 case 'saveApiKeys':
-                    this.saveApiKeys(request.apiKeys).then(() => {
+                    this.saveApiKeys(request.apiKeys, request.pin).then(() => {
                         sendResponse({ success: true });
                     }).catch(error => {
                         sendResponse({ success: false, error: error.message });
@@ -27,6 +31,48 @@ class BackgroundService {
                         sendResponse(apiKeys);
                     }).catch(error => {
                         sendResponse({ error: error.message });
+                    });
+                    return true;
+                case 'setupPin':
+                    this.encryptionManager.setupPin(request.pin).then(() => {
+                        sendResponse({ success: true });
+                    }).catch(error => {
+                        sendResponse({ success: false, error: error.message });
+                    });
+                    return true;
+                case 'verifyPin':
+                    this.encryptionManager.verifyPin(request.pin).then(isValid => {
+                        sendResponse({ success: isValid });
+                    }).catch(error => {
+                        sendResponse({ success: false, error: error.message });
+                    });
+                    return true;
+                case 'unlockSession':
+                    this.encryptionManager.unlockSession(request.pin).then(() => {
+                        sendResponse({ success: true });
+                    }).catch(error => {
+                        sendResponse({ success: false, error: error.message });
+                    });
+                    return true;
+                case 'isSessionUnlocked':
+                    this.encryptionManager.isSessionUnlocked().then(unlocked => {
+                        sendResponse({ unlocked: unlocked });
+                    }).catch(error => {
+                        sendResponse({ unlocked: false, error: error.message });
+                    });
+                    return true;
+                case 'isEncryptionEnabled':
+                    this.encryptionManager.isEncryptionEnabled().then(enabled => {
+                        sendResponse({ enabled: enabled });
+                    }).catch(error => {
+                        sendResponse({ enabled: false, error: error.message });
+                    });
+                    return true;
+                case 'resetEncryption':
+                    this.encryptionManager.resetEncryption().then(() => {
+                        sendResponse({ success: true });
+                    }).catch(error => {
+                        sendResponse({ success: false, error: error.message });
                     });
                     return true;
                 case 'saveTranscript':
@@ -135,28 +181,102 @@ class BackgroundService {
         });
     }
 
-    async saveApiKeys(apiKeys) {
-        return new Promise((resolve, reject) => {
-            chrome.storage.local.set({ apiKeys: apiKeys }, () => {
-                if (chrome.runtime.lastError) {
-                    reject(chrome.runtime.lastError);
-                } else {
-                    resolve();
+    async saveApiKeys(apiKeys, pin = null) {
+        try {
+            const isEncryptionEnabled = await this.encryptionManager.isEncryptionEnabled();
+            
+            if (isEncryptionEnabled) {
+                // If encryption is enabled, encrypt the API keys
+                let pinToUse = pin;
+                
+                // If no passkey provided, try to get it from session
+                if (!pinToUse) {
+                    pinToUse = await this.encryptionManager.getSessionPin();
                 }
-            });
-        });
+                
+                if (!pinToUse) {
+                    throw new Error('Passkey required to save API keys');
+                }
+                
+                const encryptedKeys = await this.encryptionManager.encrypt(apiKeys, pinToUse);
+                
+                return new Promise((resolve, reject) => {
+                    chrome.storage.local.set({ 
+                        encryptedApiKeys: encryptedKeys,
+                        apiKeys: {} // Clear any unencrypted keys
+                    }, () => {
+                        if (chrome.runtime.lastError) {
+                            reject(chrome.runtime.lastError);
+                        } else {
+                            resolve();
+                        }
+                    });
+                });
+            } else {
+                // If encryption is not enabled, save as before (for backward compatibility)
+                return new Promise((resolve, reject) => {
+                    chrome.storage.local.set({ apiKeys: apiKeys }, () => {
+                        if (chrome.runtime.lastError) {
+                            reject(chrome.runtime.lastError);
+                        } else {
+                            resolve();
+                        }
+                    });
+                });
+            }
+        } catch (error) {
+            throw error;
+        }
     }
 
     async getApiKeys() {
-        return new Promise((resolve, reject) => {
-            chrome.storage.local.get(['apiKeys'], (result) => {
-                if (chrome.runtime.lastError) {
-                    reject(chrome.runtime.lastError);
-                } else {
-                    resolve(result.apiKeys || {});
+        try {
+            const isEncryptionEnabled = await this.encryptionManager.isEncryptionEnabled();
+            
+            if (isEncryptionEnabled) {
+                // Check if session is unlocked
+                const isUnlocked = await this.encryptionManager.isSessionUnlocked();
+                
+                if (!isUnlocked) {
+                    throw new Error('Session locked. Please enter your passkey.');
                 }
-            });
-        });
+                
+                // Get encrypted keys
+                const encryptedKeys = await new Promise((resolve) => {
+                    chrome.storage.local.get(['encryptedApiKeys'], (result) => {
+                        resolve(result.encryptedApiKeys || null);
+                    });
+                });
+                
+                if (!encryptedKeys) {
+                    return {};
+                }
+                
+                // Get session passkey
+                const sessionPin = await this.encryptionManager.getSessionPin();
+                
+                if (!sessionPin) {
+                    throw new Error('Session passkey not found. Please unlock session.');
+                }
+                
+                // Decrypt and return
+                const decryptedKeys = await this.encryptionManager.decrypt(encryptedKeys, sessionPin);
+                return decryptedKeys;
+            } else {
+                // If encryption is not enabled, return unencrypted keys
+                return new Promise((resolve, reject) => {
+                    chrome.storage.local.get(['apiKeys'], (result) => {
+                        if (chrome.runtime.lastError) {
+                            reject(chrome.runtime.lastError);
+                        } else {
+                            resolve(result.apiKeys || {});
+                        }
+                    });
+                });
+            }
+        } catch (error) {
+            throw error;
+        }
     }
 
     async saveTranscript(videoId, transcript) {
@@ -227,6 +347,7 @@ class BackgroundService {
         });
     }
 
+    // Not using this yet maybe in the future
     async transcribeWithDeepgram(audioStreamUrl, videoId) {
         try {
             // Get the Deepgram API key
@@ -426,56 +547,25 @@ class BackgroundService {
             return {
                 segmentDuration: 5,    // 5 seconds
                 maxWords: 8,           // 8 words max (increased slightly from 6)
-                description: 'short'
             };
         } else if (durationInMinutes < 30) {
             return {
                 segmentDuration: 8,    // 8 seconds
                 maxWords: 12,          // 12 words max
-                description: 'medium'
             };
         } else if (durationInMinutes < 60) {
             return {
                 segmentDuration: 12,   // 12 seconds
                 maxWords: 18,          // 18 words max
-                description: 'long'
             };
         } else {
             return {
                 segmentDuration: 15,   // 15 seconds
                 maxWords: 25,          // 25 words max
-                description: 'very_long'
             };
         }
     }
 
-    // Clean up old data (optional - can be called periodically)
-    async cleanupOldData() {
-        const maxAge = 7 * 24 * 60 * 60 * 1000; // 7 days
-        const now = Date.now();
-
-        chrome.storage.local.get(['transcripts', 'embeddings'], (result) => {
-            const transcripts = result.transcripts || {};
-            const embeddings = result.embeddings || {};
-
-            // Clean old transcripts
-            Object.keys(transcripts).forEach(videoId => {
-                if (now - transcripts[videoId].timestamp > maxAge) {
-                    delete transcripts[videoId];
-                }
-            });
-
-            // Clean old embeddings
-            Object.keys(embeddings).forEach(videoId => {
-                if (now - embeddings[videoId].timestamp > maxAge) {
-                    delete embeddings[videoId];
-                }
-            });
-
-            // Save cleaned data
-            chrome.storage.local.set({ transcripts, embeddings });
-        });
-    }
 
     // Pin management methods
     async savePin(pin) {
@@ -628,6 +718,3 @@ class BackgroundService {
 
 // Initialize the background service
 const backgroundService = new BackgroundService();
-
-// Run cleanup on startup
-backgroundService.cleanupOldData(); 

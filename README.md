@@ -20,9 +20,9 @@
 2. **Configure API Keys**
    - Click the extension icon and open settings (⚙️)
    - Add your API keys:
-     - OpenAI API Key (Recommended) - For best semantic search
-     - Hugging Face API Key - Alternative embedding model
-     - Google AI API Key (Free) - Fallback option
+     - Google AI API Key (Free) - Get it [here](https://aistudio.google.com/apikey)
+     - OpenAI API Key (Recommended) - Get it [here](https://platform.openai.com/api-keys)
+     - Hugging Face Access Token - Get it [here](https://huggingface.co/settings/tokens)
 3. **Start Searching**
    - Navigate to any YouTube video
    - Click the extension icon
