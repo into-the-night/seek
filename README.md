@@ -13,7 +13,7 @@
 ## 🚀 Quick Start
 
 1. **Install the Extension**
-   - Download the latest release and extract it
+   - Download the latest release
    - Open Chrome/Edge and go to `chrome://extensions/`
    - Enable "Developer mode"
    - Click "Load unpacked" and select the extension directory
