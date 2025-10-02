@@ -718,7 +718,7 @@ class PopupManager {
         const embeddingModel = await this.getPreferredEmbeddingModel(apiKeys);
         
         if (!embeddingModel) {
-            throw new Error('No embedding API key configured. Please configure OpenAI, Hugging Face, or Google AI API key.');
+            throw new Error('No embedding API key configured. Please configure OpenAI, Hugging Face, or Gemini API key.');
         }
 
         // Split transcript into chunks with dynamic size based on transcript length
@@ -742,7 +742,7 @@ class PopupManager {
         // Check available keys
         const availableModels = [];
         if (apiKeys.openAI) availableModels.push({ name: 'OpenAI', type: 'openai', apiKey: apiKeys.openAI });
-        if (apiKeys.googleAI) availableModels.push({ name: 'Google AI', type: 'google', apiKey: apiKeys.googleAI });
+        if (apiKeys.googleAI) availableModels.push({ name: 'Gemini', type: 'google', apiKey: apiKeys.googleAI });
         if (apiKeys.huggingFace) availableModels.push({ name: 'BGE-base-en-v1.5', type: 'huggingface', apiKey: apiKeys.huggingFace });
         
         if (availableModels.length === 0) {
@@ -762,12 +762,12 @@ class PopupManager {
             }
         }
         
-        // Fallback to priority order: OpenAI > Google AI > Hugging Face
+        // Fallback to priority order: OpenAI > Gemini > Hugging Face
         if (apiKeys.openAI) {
             return { name: 'OpenAI', type: 'openai', apiKey: apiKeys.openAI };
         }
         if (apiKeys.googleAI) {
-            return { name: 'Google AI', type: 'google', apiKey: apiKeys.googleAI };
+            return { name: 'Gemini', type: 'google', apiKey: apiKeys.googleAI };
         }
         if (apiKeys.huggingFace) {
             return { name: 'BGE-base-en-v1.5', type: 'huggingface', apiKey: apiKeys.huggingFace };
@@ -900,7 +900,7 @@ class PopupManager {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                model: 'models/embedding-001',
+                model: 'models/gemini-embedding-001',
                 content: {
                     parts: [{ text: chunk.text }]
                 }
@@ -908,7 +908,7 @@ class PopupManager {
         });
 
         if (!response.ok) {
-            throw new Error(`Google AI API error: ${response.statusText}`);
+            throw new Error(`Gemini API error: ${response.statusText}`);
         }
 
         const data = await response.json();
