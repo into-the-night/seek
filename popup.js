@@ -874,7 +874,7 @@ class PopupManager {
     }
 
     async generateHuggingFaceEmbedding(chunk, apiKey) {
-        const response = await fetch('https://api-inference.huggingface.co/models/BAAI/bge-base-en-v1.5', {
+        const response = await fetch('https://router.huggingface.co/hf-inference/models/BAAI/bge-base-en-v1.5/pipeline/feature-extraction', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -882,9 +882,6 @@ class PopupManager {
             },
             body: JSON.stringify({
                 inputs: chunk.text,
-                options: {
-                    wait_for_model: true
-                }
             })
         });
 
@@ -897,7 +894,7 @@ class PopupManager {
     }
 
     async generateGoogleAIEmbedding(chunk, apiKey) {
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/embedding-001:embedContent?key=${apiKey}`, {
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent?key=${apiKey}`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
